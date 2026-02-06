@@ -50,6 +50,9 @@
   <binary>
     ${prefix}/lib/libpoppler-glib*.dylib
   </binary>
+  <binary>
+    ${prefix}/lib/libpoppler-cpp*.dylib
+  </binary>
 
   <!-- Lua-GObject and GObject-introspection dependency -->
   <binary>

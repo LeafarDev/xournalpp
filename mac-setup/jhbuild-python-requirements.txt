@@ -1,0 +1,6 @@
+docutils
+gi-docgen
+meson>=0.56.0
+packaging
+pygments
+setuptools

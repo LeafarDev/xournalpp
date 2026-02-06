@@ -38,6 +38,7 @@
 #include "control/tools/TextEditor.h"                            // for Text...
 #include "control/xojfile/LoadHandler.h"                         // for Load...
 #include "control/zoom/ZoomControl.h"                            // for Zoom...
+#include "gui/DockIconUpdater.h"                                  // for setDockIconFromPdfPath, clearDockIcon
 #include "gui/FloatingToolbox.h"                                 // for Floa...
 #include "gui/MainWindow.h"                                      // for Main...
 #include "gui/PageView.h"                                        // for XojP...
@@ -1734,6 +1735,17 @@ void Control::fileLoaded(int scrollToPage) {
     win->getXournal()->forceUpdatePagenumbers();
     getCursor()->updateCursor();
     updatePageActions();
+
+#ifdef __APPLE__
+    this->doc->lock();
+    fs::path pdfPath = this->doc->getPdfFilepath();
+    this->doc->unlock();
+    if (!pdfPath.empty()) {
+        xoj::setDockIconFromPdfPath(pdfPath.string());
+    } else {
+        xoj::clearDockIcon();
+    }
+#endif
 }
 
 enum class MissingPdfDialogOptions : gint { USE_PROPOSED, SELECT_OTHER, REMOVE, CANCEL };

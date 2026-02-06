@@ -35,6 +35,16 @@
    </section>
    <section>
     <item>
+     <attribute name="label" translatable="yes">Set Group Name…</attribute>
+     <attribute name="action">win.set-group-name</attribute>
+    </item>
+    <item>
+     <attribute name="label" translatable="yes">Open Group…</attribute>
+     <attribute name="action">win.open-group</attribute>
+    </item>
+   </section>
+   <section>
+    <item>
      <attribute name="label" translatable="yes">_Export as PDF</attribute>
      <attribute name="action">win.export-as-pdf</attribute>
     </item>

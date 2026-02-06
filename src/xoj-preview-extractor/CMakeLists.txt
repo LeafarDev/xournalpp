@@ -23,15 +23,7 @@ add_executable (xournalpp-thumbnailer
         )
 
 target_compile_features (xournalpp-thumbnailer PRIVATE cxx_std_20)
-target_link_libraries (xournalpp-thumbnailer
-  util
-  ${ZLIB_LIBRARIES}
-  ${librsvg_LDFLAGS}
-  ${Glib_LDFLAGS}
-  ${ZIP_LDFLAGS}
-  )
-
-target_include_directories (xournalpp-thumbnailer PRIVATE ${librsvg_INCLUDE_DIRS})
+target_link_libraries (xournalpp-thumbnailer PRIVATE util)
 
 set (THUMBNAILER_BIN "xournalpp-thumbnailer")
 

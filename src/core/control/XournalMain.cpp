@@ -2,7 +2,6 @@
 
 #include <algorithm>  // for copy, sort, max
 #include <array>      // for array
-#include <chrono>     // for time_point, duration, hours...
 #include <clocale>    // for setlocale, LC_NUMERIC
 #include <cstdio>     // for printf
 #include <cstdlib>    // for exit, size_t
@@ -51,8 +50,15 @@
 
 namespace {
 
-constexpr auto APP_FLAGS =
-        GApplicationFlags(G_APPLICATION_SEND_ENVIRONMENT | G_APPLICATION_NON_UNIQUE | G_APPLICATION_HANDLES_OPEN);
+// On macOS: G_APPLICATION_NON_UNIQUE so each launch (e.g. each PDF from Finder) is a real process;
+// no IPC redirection, each window gets its own Dock icon.
+static auto get_app_flags() -> GApplicationFlags {
+    auto flags = GApplicationFlags(G_APPLICATION_SEND_ENVIRONMENT | G_APPLICATION_HANDLES_OPEN);
+#ifdef __APPLE__
+    flags = static_cast<GApplicationFlags>(flags | G_APPLICATION_NON_UNIQUE);
+#endif
+    return flags;
+}
 
 /// Configuration migration status.
 enum class MigrateStatus {
@@ -396,6 +402,9 @@ void on_open_files(GApplication* application, gpointer f, gint numFiles, gchar* 
     if (numFiles <= 0) {
         return;
     }
+    if (!app_data->win || !app_data->control) {
+        return;
+    }
     auto* files = (GFile**)f;
     if (numFiles != 1) {
         const std::string msg = _("Sorry, Xournal++ can only open one file at once.\n"
@@ -404,6 +413,27 @@ void on_open_files(GApplication* application, gpointer f, gint numFiles, gchar* 
     }
 
     const fs::path p = Util::fromGFile(files[0]);
+
+#ifdef __APPLE__
+    // macOS: Finder often forwards open events to an existing instance.
+    // To get one instance per file, spawn a new process once, and guard against recursion.
+    const char* spawnedGuard = g_getenv("XOURNALPP_SPAWNED_OPEN");
+    if ((!spawnedGuard || std::string(spawnedGuard) != "1") && fs::exists(p)) {
+        try {
+            fs::path abs = fs::absolute(p);
+            std::string pathArg = abs.string();
+            size_t pos = 0;
+            while ((pos = pathArg.find('"', pos)) != std::string::npos) {
+                pathArg.replace(pos, 1, "\\\"");
+                pos += 2;
+            }
+            std::string cmd = "XOURNALPP_SPAWNED_OPEN=1 open -na \"Xournal++\" --args \"" + pathArg + "\" &";
+            std::system(cmd.c_str());
+        } catch (const fs::filesystem_error&) {
+        }
+        return;
+    }
+#endif
 
     try {
         if (fs::exists(p)) {
@@ -594,7 +624,7 @@ void XournalMain::initLocalisation() {
 auto XournalMain::run(int argc, char** argv) -> int {
 
     XournalMainPrivate app_data;
-    GtkApplication* app = gtk_application_new("com.github.xournalpp.xournalpp", APP_FLAGS);
+    GtkApplication* app = gtk_application_new("com.github.xournalpp.xournalpp", get_app_flags());
     g_object_set(G_OBJECT(app), "register-session", true, nullptr);  // Needed for opening files on MacOS from Finder
     g_set_prgname("com.github.xournalpp.xournalpp");
     g_signal_connect(app, "activate", G_CALLBACK(&on_activate), &app_data);

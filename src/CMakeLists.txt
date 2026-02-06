@@ -114,6 +114,8 @@ if (APPLE)
   file (GLOB xournalpp-sources-osx exe/osx/*.cpp exe/osx/*.h)
   target_sources(xournalpp PRIVATE ${xournalpp-sources-osx})
   target_include_directories(xournalpp PRIVATE exe)
+  # Frameworks for DockIconUpdater (Dock icon from document preview)
+  target_link_libraries(xournalpp PRIVATE "-framework AppKit" "-framework CoreGraphics")
 endif()
 
 if (WIN32)
