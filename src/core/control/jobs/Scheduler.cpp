@@ -150,7 +150,7 @@ auto Scheduler::jobThreadCallback(Scheduler* scheduler) -> gpointer {
         SDEBUG("Job Thread: Blocked scheduler.");
 
         bool onlyNonRenderJobs = false;
-        gint64 diff = 1000;
+        gint64 diff = 600;
         if (scheduler->blockRenderZoomTime) {
             SDEBUG("Zoom re-render blocking.");
 

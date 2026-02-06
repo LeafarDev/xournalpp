@@ -11,6 +11,15 @@ cmake_policy(VERSION 3.13)
 add_library(defaults INTERFACE)
 target_include_directories(defaults INTERFACE ${PROJECT_BINARY_DIR}/src)
 add_library(xoj::defaults ALIAS defaults)
+find_path(LIBINTL_INCLUDE_DIR libintl.h
+  PATHS
+    /opt/homebrew/opt/gettext/include
+    /usr/local/opt/gettext/include
+    /Users/rafael/gtk/inst/include
+)
+if (LIBINTL_INCLUDE_DIR)
+  target_include_directories(defaults INTERFACE ${LIBINTL_INCLUDE_DIR})
+endif()
 if (MSVC) # clang-cl.exe, cl.exe
   target_compile_definitions(defaults INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
   target_compile_options(defaults INTERFACE -utf-8)

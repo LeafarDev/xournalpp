@@ -187,10 +187,10 @@ void Settings::loadDefault() {
     this->touchZoomStartThreshold = 0.0;
 
     this->pageRerenderThreshold = 5.0;
-    this->pdfPageCacheSize = 10;
-    this->preloadPagesBefore = 3U;
-    this->preloadPagesAfter = 5U;
-    this->eagerPageCleanup = true;
+    this->pdfPageCacheSize = 500;
+    this->preloadPagesBefore = 10U;
+    this->preloadPagesAfter = 10U;
+    this->eagerPageCleanup = false;
 
     this->selectionBorderColor = Colors::red;
     this->selectionMarkerColor = Colors::xopp_cornflowerblue;

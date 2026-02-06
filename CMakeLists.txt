@@ -14,8 +14,8 @@ endif()
 
 
 if(NOT CMAKE_BUILD_TYPE)
-    # set default build type to RelWithDebInfo, we never supported multi config generators, therefore this is fine
-    set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
+    # set default build type to Release for best runtime performance
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
 endif()
 
 ## Project related Variables

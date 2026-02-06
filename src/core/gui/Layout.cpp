@@ -10,6 +10,7 @@
 #include <glib-object.h>  // for G_CALLBACK, g_signal_connect
 
 #include "control/Control.h"            // for Control
+#include "control/jobs/XournalScheduler.h"  // for XournalScheduler
 #include "control/settings/Settings.h"  // for Settings
 #include "gui/LayoutMapper.h"           // for LayoutMapper, GridPosition
 #include "gui/PageView.h"               // for XojPageView
@@ -48,15 +49,50 @@ Layout::Layout(XournalView* view, ScrollHandling* scrollHandling): view(view), s
 }
 
 void Layout::horizontalScrollChanged(GtkAdjustment* adjustment, Layout* layout) {
-    Layout::checkScroll(adjustment, layout->lastScrollHorizontal);
-    layout->updateVisibility();
+    if (Layout::checkScroll(adjustment, layout->lastScrollHorizontal)) {
+        layout->queueVisibilityUpdate();
+    }
 }
 
 void Layout::verticalScrollChanged(GtkAdjustment* adjustment, Layout* layout) {
-    Layout::checkScroll(adjustment, layout->lastScrollVertical);
-    layout->updateVisibility();
+    if (Layout::checkScroll(adjustment, layout->lastScrollVertical)) {
+        layout->queueVisibilityUpdate();
+    }
 
     layout->maybeAddLastPage(layout);
+}
+
+void Layout::queueVisibilityUpdate() {
+    if (this->visibilityUpdateSourceId != 0) {
+        return;
+    }
+    constexpr guint visibilityUpdateIntervalMs = 33;  // ~30fps throttle for heavy scroll updates
+    this->visibilityUpdateSourceId = g_timeout_add_full(G_PRIORITY_DEFAULT_IDLE, visibilityUpdateIntervalMs,
+                                                        &Layout::updateVisibilityTimeout, this, nullptr);
+}
+
+gboolean Layout::updateVisibilityTimeout(gpointer data) {
+    auto* layout = static_cast<Layout*>(data);
+    layout->visibilityUpdateSourceId = 0;
+    layout->updateVisibility();
+    return G_SOURCE_REMOVE;
+}
+
+void Layout::scheduleRerenderUnblock() {
+    if (this->rerenderUnblockSourceId != 0) {
+        g_source_remove(this->rerenderUnblockSourceId);
+        this->rerenderUnblockSourceId = 0;
+    }
+    constexpr guint rerenderUnblockDelayMs = 1000;  // render after scroll settles
+    this->rerenderUnblockSourceId = g_timeout_add_full(G_PRIORITY_DEFAULT_IDLE, rerenderUnblockDelayMs,
+                                                       &Layout::rerenderUnblockTimeout, this, nullptr);
+}
+
+gboolean Layout::rerenderUnblockTimeout(gpointer data) {
+    auto* layout = static_cast<Layout*>(data);
+    layout->rerenderUnblockSourceId = 0;
+    layout->view->getControl()->getScheduler()->unblockRerenderZoom();
+    return G_SOURCE_REMOVE;
 }
 
 void Layout::maybeAddLastPage(Layout* layout) {
@@ -82,25 +118,66 @@ void Layout::maybeAddLastPage(Layout* layout) {
     }
 }
 
-void Layout::checkScroll(GtkAdjustment* adjustment, double& lastScroll) {
-    lastScroll = gtk_adjustment_get_value(adjustment);
+bool Layout::checkScroll(GtkAdjustment* adjustment, double& lastScroll) {
+    constexpr double minScrollDelta = 1.0;  // ignore tiny smooth-scroll deltas
+    double current = gtk_adjustment_get_value(adjustment);
+    if (std::abs(current - lastScroll) < minScrollDelta) {
+        return false;
+    }
+    lastScroll = current;
+    return true;
 }
 
 void Layout::updateVisibility() {
     Rectangle visRect = getVisibleRect();
 
-    // step through every possible page position and update using p->setIsVisible()
-    // Using initial grid aprox speeds things up by a factor of 5.  See previous git check-in for specifics.
-    int x1 = 0;
-    int y1 = 0;
+    if (this->rowYStart.empty() || this->colXStart.empty()) {
+        return;
+    }
+
+    // Bound the scan to visible rows/cols to reduce work on large documents.
+    const double visX1 = visRect.x;
+    const double visX2 = visRect.x + visRect.width;
+    const double visY1 = visRect.y;
+    const double visY2 = visRect.y + visRect.height;
+
+    size_t rowStart = static_cast<size_t>(std::lower_bound(this->rowYStart.begin(), this->rowYStart.end(), visY1) -
+                                          this->rowYStart.begin());
+    if (rowStart > 0) {
+        rowStart -= 1;
+    }
+    size_t rowEnd = static_cast<size_t>(std::lower_bound(this->rowYStart.begin(), this->rowYStart.end(), visY2) -
+                                        this->rowYStart.begin());
+    rowEnd = std::min(rowEnd + 1, this->rowYStart.size());
+
+    size_t colStart = static_cast<size_t>(std::lower_bound(this->colXStart.begin(), this->colXStart.end(), visX1) -
+                                          this->colXStart.begin());
+    if (colStart > 0) {
+        colStart -= 1;
+    }
+    size_t colEnd = static_cast<size_t>(std::lower_bound(this->colXStart.begin(), this->colXStart.end(), visX2) -
+                                        this->colXStart.begin());
+    colEnd = std::min(colEnd + 1, this->colXStart.size());
 
     // Data to select page based on visibility
     std::optional<size_t> mostPageNr;
     double mostPagePercent = 0;
 
-    for (size_t row = 0; row < this->rowYStart.size(); ++row) {
+    if (this->visibleStamp.size() != this->view->viewPages.size()) {
+        this->visibleStamp.assign(this->view->viewPages.size(), 0);
+    }
+    if (++this->visibleStampCounter == 0) {
+        std::fill(this->visibleStamp.begin(), this->visibleStamp.end(), 0);
+        this->visibleStampCounter = 1;
+    }
+    std::vector<size_t> visibleNow;
+    visibleNow.reserve(8);
+
+    for (size_t row = rowStart; row < rowEnd; ++row) {
+        auto y1 = row == 0 ? 0 : as_signed_strict(this->rowYStart[row - 1]);
         auto y2 = as_signed_strict(this->rowYStart[row]);
-        for (size_t col = 0; col < this->colXStart.size(); ++col) {
+        for (size_t col = colStart; col < colEnd; ++col) {
+            auto x1 = col == 0 ? 0 : as_signed_strict(this->colXStart[col - 1]);
             auto x2 = as_signed_strict(this->colXStart[col]);
             auto optionalPage = this->mapper.at({col, row});
             if (optionalPage)  // a page exists at this grid location
@@ -115,6 +192,8 @@ void Layout::updateVisibility() {
                     auto const& pageRect = pageView->getRect();
                     if (auto intersection = pageRect.intersects(visRect); intersection) {
                         pageView->setIsVisible(true);
+                        this->visibleStamp[*optionalPage] = this->visibleStampCounter;
+                        visibleNow.push_back(*optionalPage);
                         // Set the selected page
                         double percent = intersection->area() / pageRect.area();
 
@@ -123,18 +202,24 @@ void Layout::updateVisibility() {
                             mostPagePercent = percent;
                         }
                     }
-                } else {
-                    pageView->setIsVisible(false);
                 }
             }
-            x1 = x2;
         }
-        y1 = y2;
-        x1 = 0;
     }
 
+    // Hide pages that were visible in the previous update but aren't visible now.
+    for (size_t idx : this->lastVisibleIndices) {
+        if (idx < this->visibleStamp.size() && this->visibleStamp[idx] != this->visibleStampCounter) {
+            this->view->viewPages[idx]->setIsVisible(false);
+        }
+    }
+    this->lastVisibleIndices = std::move(visibleNow);
+
     if (mostPageNr) {
-        this->view->getControl()->firePageSelected(*mostPageNr);
+        if (!this->lastSelectedPage || *this->lastSelectedPage != *mostPageNr) {
+            this->lastSelectedPage = *mostPageNr;
+            this->view->getControl()->firePageSelected(*mostPageNr);
+        }
     }
 }
 
@@ -375,6 +460,10 @@ void Layout::scrollRelative(double x, double y) {
         return;
     }
 
+    // During active scrolling, temporarily block rerender to avoid stutter.
+    this->view->getControl()->getScheduler()->blockRerenderZoom();
+    this->scheduleRerenderUnblock();
+
     gtk_adjustment_set_value(scrollHandling->getHorizontal(),
                              gtk_adjustment_get_value(scrollHandling->getHorizontal()) + x);
     gtk_adjustment_set_value(scrollHandling->getVertical(),
@@ -385,6 +474,10 @@ void Layout::scrollAbs(double x, double y) {
     if (this->view->getControl()->getSettings()->isPresentationMode()) {
         return;
     }
+
+    // During active scrolling, temporarily block rerender to avoid stutter.
+    this->view->getControl()->getScheduler()->blockRerenderZoom();
+    this->scheduleRerenderUnblock();
 
     gtk_adjustment_set_value(scrollHandling->getHorizontal(), x);
     gtk_adjustment_set_value(scrollHandling->getVertical(), y);

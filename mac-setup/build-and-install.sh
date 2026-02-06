@@ -37,7 +37,7 @@ build_dir="$ROOT_DIR"/build
 mkdir -p "$build_dir"
 
 pushd "$build_dir"
-$ENSURE_JHBUILD cmake .. -GNinja
+$ENSURE_JHBUILD cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release
 $ENSURE_JHBUILD cmake --build .
 $ENSURE_JHBUILD cmake --install . --prefix "$prefix_parent"/inst
 popd

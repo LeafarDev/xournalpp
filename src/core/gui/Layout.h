@@ -148,12 +148,16 @@ protected:
     static void verticalScrollChanged(GtkAdjustment* adjustment, Layout* layout);
 
 private:
+    void queueVisibilityUpdate();
+    static gboolean updateVisibilityTimeout(gpointer data);
+    void scheduleRerenderUnblock();
+    static gboolean rerenderUnblockTimeout(gpointer data);
     void recalculate_int() const;
 
     void maybeAddLastPage(Layout* layout);
 
     // Todo(Fabian): move to ScrollHandling also it must not depend on Layout
-    static void checkScroll(GtkAdjustment* adjustment, double& lastScroll);
+    static bool checkScroll(GtkAdjustment* adjustment, double& lastScroll);
 
 private:
     XournalView* view = nullptr;
@@ -162,6 +166,9 @@ private:
     // Todo(Fabian): move to ScrollHandling also it must not depend on Layout
     double lastScrollHorizontal = -1;
     double lastScrollVertical = -1;
+
+    guint visibilityUpdateSourceId = 0;
+    guint rerenderUnblockSourceId = 0;
 
     /**
      * layoutPages invalidates the precalculation of recalculate
@@ -172,4 +179,9 @@ private:
     mutable PreCalculated pc{};
     mutable std::vector<unsigned> colXStart;
     mutable std::vector<unsigned> rowYStart;
+
+    std::optional<size_t> lastSelectedPage;
+    std::vector<size_t> lastVisibleIndices;
+    std::vector<uint32_t> visibleStamp;
+    uint32_t visibleStampCounter = 0;
 };
