@@ -43,10 +43,13 @@
 
 #include "Control.h"       // for Control
 #include "ExportHelper.h"  // for exportImg, exportPdf
+#include "ai/LLMEngine.h"  // for LLMEngine
 #include "config-dev.h"    // for ERRORLOG_DIR
 #include "config-git.h"    // for GIT_BRANCH, GIT_ORIGIN_O...
 #include "config.h"        // for GETTEXT_PACKAGE, ENABLE_NLS
 #include "filesystem.h"    // for path, operator/, exists
+
+#include <thread>
 
 namespace {
 
@@ -466,9 +469,26 @@ void on_startup(GApplication* application, XMPtr app_data) {
 
     auto& globalLatexTemplatePath = app_data->control->getSettings()->latexSettings.globalTemplatePath;
     if (globalLatexTemplatePath.empty()) {
-        globalLatexTemplatePath = findResourcePath("resources/") / "default_template.tex";
-        g_message("Using default latex template in %s", globalLatexTemplatePath.string().c_str());
-        app_data->control->getSettings()->save();
+        fs::path defaultTemplatePath = Util::getDataPath() / "default_template.tex";
+        if (!fs::exists(defaultTemplatePath)) {
+            fs::path resourceDir = findResourcePath("default_template.tex");
+            if (resourceDir.empty()) {
+                resourceDir = findResourcePath("resources/default_template.tex");
+            }
+            if (resourceDir.empty()) {
+                resourceDir = findResourcePath("resources/");
+            }
+            if (!resourceDir.empty()) {
+                defaultTemplatePath = resourceDir / "default_template.tex";
+            }
+        }
+        if (fs::exists(defaultTemplatePath)) {
+            globalLatexTemplatePath = defaultTemplatePath;
+            g_message("Using default latex template in %s", globalLatexTemplatePath.string().c_str());
+            app_data->control->getSettings()->save();
+        } else {
+            g_warning("Default latex template not found; LaTeX rendering may be disabled.");
+        }
     }
 
     app_data->win = std::make_unique<MainWindow>(app_data->gladePath.get(), app_data->control.get(),
@@ -485,6 +505,28 @@ void on_startup(GApplication* application, XMPtr app_data) {
     // Do we want stuff in gtk_application_set_app_menu?
 
     app_data->win->show(nullptr);
+
+    // MVP LLM runtime test (disabled by default)
+    const char* llmTest = g_getenv("XOURNALPP_LLM_TEST");
+    if (llmTest && std::string(llmTest) == "1") {
+        const char* modelPath = g_getenv("XOURNALPP_LLM_MODEL");
+        if (!modelPath || std::string(modelPath).empty()) {
+            g_warning("LLM test requested, but XOURNALPP_LLM_MODEL is not set.");
+        } else {
+            std::string modelPathStr = modelPath;
+            std::thread([modelPathStr]() {
+                LLMEngine engine;
+                if (!engine.init(modelPathStr)) {
+                    g_warning("LLMEngine init failed for model: %s", modelPathStr.c_str());
+                    return;
+                }
+                const std::string prompt = "You are a helpful assistant. Say hello in one sentence.";
+                std::string result = engine.run(prompt);
+                g_message("LLMEngine test output: %s", result.c_str());
+                engine.shutdown();
+            }).detach();
+        }
+    }
 
     fs::path p;
     if (app_data->optFilename) {

@@ -154,6 +154,13 @@ public:
     void showAbout();
     void showGtkDemo();
 
+    // MVP: Ask about current document (local LLM)
+    void askAboutDocument();
+
+    // Ensure LLM model exists locally (download on demand)
+    void ensureLLMModel(std::function<void(bool, const std::string&)> callback);
+    void ensureLLMModel(const std::string& modelId, std::function<void(bool, const std::string&)> callback);
+
     /**
      * @brief Update the Cursor and the Toolbar based on the active color
      *

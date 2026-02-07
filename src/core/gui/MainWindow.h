@@ -41,6 +41,9 @@ class FloatingToolbox;
 class GladeSearchpath;
 
 class Menubar;
+namespace xoj::chat {
+class ChatPanel;
+}
 
 typedef std::array<xoj::util::WidgetSPtr, TOOLBAR_DEFINITIONS_LEN> ToolbarWidgetArray;
 
@@ -86,6 +89,8 @@ public:
     void setMenubarVisible(bool visible);
     void setSidebarVisible(bool visible);
     void setToolbarVisible(bool visible);
+    void setChatVisible(bool visible);
+    bool isChatVisible() const;
 
     Control* getControl() const;
 
@@ -193,4 +198,9 @@ private:
     xoj::util::WidgetSPtr panedContainerWidget;
     xoj::util::WidgetSPtr mainContentWidget;
     xoj::util::WidgetSPtr sidebarWidget;
+
+    xoj::util::WidgetSPtr chatPanedWidget;
+    xoj::util::WidgetSPtr chatWidget;
+    std::unique_ptr<xoj::chat::ChatPanel> chatPanel;
+    bool chatVisible = false;
 };

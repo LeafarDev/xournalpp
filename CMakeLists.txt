@@ -92,6 +92,15 @@ set(PACKAGE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/share")
 include(GitRepo)
 
 ################################
+# Embedded llama.cpp (offline LLM runtime)
+################################
+set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
+add_subdirectory(thirdparty/llama.cpp EXCLUDE_FROM_ALL)
+
+################################
 # CMake os-fixups
 # this section should decrease in size for newer CMake versions.
 ################################

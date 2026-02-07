@@ -105,6 +105,72 @@ auto Util::getExePath() -> fs::path {
 #endif
 #endif
 
+auto Util::getBundledAria2Path() -> fs::path {
+    fs::path exeDir = getExePath();
+#ifdef __APPLE__
+    fs::path p = exeDir.parent_path() / "Resources" / "bin" / "aria2c";
+    return p;
+#elif defined(_WIN32)
+    return exeDir / "aria2c.exe";
+#else
+    return exeDir / "bin" / "aria2c";
+#endif
+}
+
+auto Util::getBundledCopilotPath() -> fs::path {
+    fs::path exeDir = getExePath();
+#ifdef __APPLE__
+    return exeDir.parent_path() / "Resources" / "bin" / "copilot";
+#elif defined(_WIN32)
+    return exeDir / "copilot.exe";
+#else
+    return exeDir / "bin" / "copilot";
+#endif
+}
+
+auto Util::getLatex2SvgPath() -> fs::path {
+    fs::path exeDir = getExePath();
+    fs::path bundled;
+#ifdef __APPLE__
+    bundled = exeDir.parent_path() / "Resources" / "bin" / "microtex";
+#elif defined(_WIN32)
+    bundled = exeDir / "microtex.exe";
+#else
+    bundled = exeDir / "bin" / "microtex";
+#endif
+    if (!bundled.empty() && fs::exists(bundled) && fs::is_regular_file(bundled)) {
+        return bundled;
+    }
+    gchar* found = g_find_program_in_path("microtex");
+    if (found) {
+        fs::path p(found);
+        g_free(found);
+        return p;
+    }
+    return {};
+}
+
+auto Util::getBundledTectonicPath() -> fs::path {
+    fs::path exeDir = getExePath();
+    fs::path bundled;
+#ifdef __APPLE__
+    bundled = exeDir.parent_path() / "Resources" / "bin" / "tectonic";
+#elif defined(_WIN32)
+    bundled = exeDir / "tectonic.exe";
+#else
+    bundled = exeDir / "bin" / "tectonic";
+#endif
+    if (!bundled.empty() && fs::exists(bundled) && fs::is_regular_file(bundled)) {
+        return bundled;
+    }
+    gchar* found = g_find_program_in_path("tectonic");
+    if (found) {
+        fs::path p(found);
+        g_free(found);
+        return p;
+    }
+    return {};
+}
 
 /**
  * Read a file to a string

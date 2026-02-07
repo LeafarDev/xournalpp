@@ -87,6 +87,7 @@ constexpr const char* ACTION_NAMES[] = {  // Action to string conversion map
         "tool-highlighter-fill-opacity",
         "tool-select-pdf-text-marker-opacity",
         "toggle-touch-drawing",
+        "ask-document",
         "audio-record",
         "audio-pause-playback",
         "audio-stop-playback",

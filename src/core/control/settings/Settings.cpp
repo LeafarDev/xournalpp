@@ -96,6 +96,13 @@ void Settings::loadDefault() {
     this->sidebarWidth = 150;
     this->sidebarNumberingStyle = SidebarNumberingStyle::DEFAULT;
 
+    this->showChat = false;
+    this->chatWidth = 360;
+    this->chatModel = "phi3-mini-math";
+    this->useGhForModelDownload = false;
+    this->chatContext = "current_page";
+    this->chatContextSize = 12000;
+
     this->showToolbar = true;
     this->selectedToolbar = DEFAULT_TOOLBAR;
 
@@ -440,6 +447,16 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->pageNumberShownInTitlebar = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("showSidebar")) == 0) {
         this->showSidebar = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("showChat")) == 0) {
+        this->showChat = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("chatModel")) == 0) {
+        this->chatModel = reinterpret_cast<const char*>(value);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("useGhForModelDownload")) == 0) {
+        this->useGhForModelDownload = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("chatContext")) == 0) {
+        this->chatContext = reinterpret_cast<const char*>(value);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("chatContextSize")) == 0) {
+        this->chatContextSize = std::max<int>(g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10), 1000);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarNumberingStyle")) == 0) {
         int num = std::stoi(reinterpret_cast<char*>(value));
         if (num < static_cast<int>(SidebarNumberingStyle::MIN) || static_cast<int>(SidebarNumberingStyle::MAX) < num) {
@@ -449,6 +466,8 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->sidebarNumberingStyle = static_cast<SidebarNumberingStyle>(num);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarWidth")) == 0) {
         this->sidebarWidth = std::max<int>(g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10), 50);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("chatWidth")) == 0) {
+        this->chatWidth = std::max<int>(g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10), 200);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarOnRight")) == 0) {
         this->sidebarOnRight = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("scrollbarOnLeft")) == 0) {
@@ -1025,6 +1044,12 @@ void Settings::save() {
 
     SAVE_BOOL_PROP(showSidebar);
     SAVE_INT_PROP(sidebarWidth);
+    SAVE_BOOL_PROP(showChat);
+    SAVE_INT_PROP(chatWidth);
+    SAVE_STRING_PROP(chatModel);
+    SAVE_BOOL_PROP(useGhForModelDownload);
+    SAVE_STRING_PROP(chatContext);
+    SAVE_INT_PROP(chatContextSize);
     xmlNode = saveProperty("sidebarNumberingStyle", static_cast<int>(sidebarNumberingStyle), root);
 
     SAVE_BOOL_PROP(sidebarOnRight);
@@ -2014,6 +2039,68 @@ void Settings::setSidebarVisible(bool visible) {
         return;
     }
     this->showSidebar = visible;
+    save();
+}
+
+auto Settings::isChatVisible() const -> bool { return this->showChat; }
+
+void Settings::setChatVisible(bool visible) {
+    if (this->showChat == visible) {
+        return;
+    }
+    this->showChat = visible;
+    save();
+}
+
+auto Settings::getChatWidth() const -> int { return this->chatWidth; }
+
+void Settings::setChatWidth(int width) {
+    width = std::max(width, 200);
+    if (this->chatWidth == width) {
+        return;
+    }
+    this->chatWidth = width;
+    save();
+}
+
+auto Settings::getChatModel() const -> const std::string& { return this->chatModel; }
+
+void Settings::setChatModel(const std::string& modelId) {
+    if (this->chatModel == modelId) {
+        return;
+    }
+    this->chatModel = modelId;
+    save();
+}
+
+bool Settings::getUseGhForModelDownload() const { return this->useGhForModelDownload; }
+
+void Settings::setUseGhForModelDownload(bool use) {
+    if (this->useGhForModelDownload == use) {
+        return;
+    }
+    this->useGhForModelDownload = use;
+    save();
+}
+
+auto Settings::getChatContext() const -> const std::string& { return this->chatContext; }
+
+void Settings::setChatContext(const std::string& contextId) {
+    if (this->chatContext == contextId) {
+        return;
+    }
+    this->chatContext = contextId;
+    save();
+}
+
+auto Settings::getChatContextSize() const -> int { return this->chatContextSize; }
+
+void Settings::setChatContextSize(int size) {
+    size = std::max(size, 1000);
+    if (this->chatContextSize == size) {
+        return;
+    }
+    this->chatContextSize = size;
     save();
 }
 

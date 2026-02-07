@@ -768,6 +768,11 @@ struct ActionProperties<Action::TOGGLE_TOUCH_DRAWING> {
 };
 
 template <>
+struct ActionProperties<Action::ASK_DOCUMENT> {
+    static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->askAboutDocument(); }
+};
+
+template <>
 struct ActionProperties<Action::SELECT_FONT> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->showFontDialog(); }
 };

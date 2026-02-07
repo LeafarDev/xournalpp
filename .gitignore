@@ -63,3 +63,6 @@ Debug
 # Miscellaneous
 .DS_STORE
 *~
+
+# Binary blob (exceeds GitHub 100 MB limit; use LFS or external storage if needed)
+xournalpp-binary-blob.tar.gz

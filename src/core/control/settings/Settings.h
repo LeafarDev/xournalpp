@@ -218,6 +218,19 @@ public:
     bool isSidebarVisible() const;
     void setSidebarVisible(bool visible);
 
+    bool isChatVisible() const;
+    void setChatVisible(bool visible);
+    int getChatWidth() const;
+    void setChatWidth(int width);
+    const std::string& getChatModel() const;
+    void setChatModel(const std::string& modelId);
+    bool getUseGhForModelDownload() const;
+    void setUseGhForModelDownload(bool use);
+    const std::string& getChatContext() const;
+    void setChatContext(const std::string& contextId);
+    int getChatContextSize() const;
+    void setChatContextSize(int size);
+
     bool isToolbarVisible() const;
     void setToolbarVisible(bool visible);
 
@@ -656,6 +669,13 @@ private:
      *  If the sidebar is visible
      */
     bool showToolbar{};
+
+    bool showChat{};
+    int chatWidth{};
+    std::string chatModel;
+    bool useGhForModelDownload{};
+    std::string chatContext;
+    int chatContextSize{};
 
     /**
      *  The Width of the Sidebar

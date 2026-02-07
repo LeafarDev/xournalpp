@@ -221,6 +221,11 @@
      <attribute name="action">win.show-sidebar</attribute>
      <attribute name="accel">F12</attribute>
     </item>
+    <item>
+     <attribute name="label" translatable="yes">AI Chat</attribute>
+     <attribute name="action">win.ask-document</attribute>
+     <attribute name="accel">&lt;Ctrl&gt;&lt;Alt&gt;c</attribute>
+    </item>
    </section>
    <section>
     <submenu>
@@ -527,6 +532,10 @@
      <attribute name="action">win.select-tool</attribute>
      <attribute name="target" type="t">2</attribute> <!-- TOOL_ERASER -->
      <attribute name="accel">&lt;Ctrl&gt;&lt;Shift&gt;e</attribute>
+    </item>
+    <item>
+      <attribute name="label" translatable="yes">Ask about this document</attribute>
+      <attribute name="action">win.ask-document</attribute>
     </item>
     <item>
      <attribute name="label" translatable="yes">Select Linear Text</attribute>

@@ -161,6 +161,15 @@ auto system_single_byte_filename(const fs::path& path) -> std::string;
 [[maybe_unused]] [[nodiscard]] fs::path getDataPath();
 [[maybe_unused]] [[nodiscard]] fs::path getLocalePath();
 [[maybe_unused]] [[nodiscard]] fs::path getExePath();  ///< folder containing the executable
+/// Path to bundled aria2c binary (empty if not bundled). Check fs::exists() before use.
+[[maybe_unused]] [[nodiscard]] fs::path getBundledAria2Path();
+/// Path to bundled Copilot CLI (empty if not bundled). Check fs::exists() before use.
+[[maybe_unused]] [[nodiscard]] fs::path getBundledCopilotPath();
+/// Path to a LaTeX→SVG binary (e.g. MicroTeX headless). Checks bundled then PATH for "microtex".
+/// Use this for chat formula rendering so we don't depend on pdflatex. Empty if not found.
+[[maybe_unused]] [[nodiscard]] fs::path getLatex2SvgPath();
+/// Path to bundled Tectonic TeX engine (empty if not bundled). Checks bundled then PATH for "tectonic".
+[[maybe_unused]] [[nodiscard]] fs::path getBundledTectonicPath();
 fs::path getBuiltInPaletteDirectoryPath();
 fs::path getCustomPaletteDirectoryPath();
 

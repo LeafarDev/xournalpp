@@ -23,9 +23,21 @@ void setDockIconFromPdfPath(const std::string& pdfPathUtf8);
  */
 void clearDockIcon();
 
+/**
+ * macOS only: set Dock badge label (e.g., filename). No-op on other platforms.
+ */
+void setDockBadgeLabel(const std::string& labelUtf8);
+
+/**
+ * macOS only: clear Dock badge label. No-op on other platforms.
+ */
+void clearDockBadgeLabel();
+
 }  // namespace xoj
 
 #ifndef __APPLE__
 inline void xoj::setDockIconFromPdfPath(const std::string&) {}
 inline void xoj::clearDockIcon() {}
+inline void xoj::setDockBadgeLabel(const std::string&) {}
+inline void xoj::clearDockBadgeLabel() {}
 #endif

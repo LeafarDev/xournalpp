@@ -12,10 +12,10 @@ GTK_OSX_PATCHFILE="$MAC_SETUP_DIR/gtk-osx.patch"
 GTK_MODULES="meta-gtk-osx-gtk3 gtksourceview3"
 
 # Use already-installed jhbuild (e.g. from readme/JHBuildMacOS.md) instead of cloning + gtk-osx-setup.
-# You can force either mode:
-# - JHBUILD_USE_INSTALLED=1  -> use ~/.local/bin/jhbuild (no pyenv)
-# - JHBUILD_USE_INSTALLED=0  -> run gtk-osx-setup.sh (uses pyenv; closer to CI)
-# If unset, script auto-detects ~/.local/bin/jhbuild.
+# Force either mode:
+#   JHBUILD_USE_INSTALLED=1  -> use ~/.local/bin/jhbuild (no pyenv; default if jhbuild exists)
+#   JHBUILD_USE_INSTALLED=0  -> do NOT use installed; run gtk-osx-setup.sh (clone jhbuild, pyenv; closer to CI)
+# If unset, script auto-detects: uses installed when ~/.local/bin/jhbuild exists.
 if [ "${JHBUILD_USE_INSTALLED:-}" = "1" ]; then
     JHBUILD_USE_INSTALLED=1
 elif [ "${JHBUILD_USE_INSTALLED:-}" = "0" ]; then
@@ -25,7 +25,11 @@ elif [ -x "$HOME/.local/bin/jhbuild" ]; then
 else
     JHBUILD_USE_INSTALLED=0
 fi
-# When using installed jhbuild, we keep ~/gtk by default (faster re-runs). Set JHBUILD_CLEAN=1 to force a full clean.
+# When using installed jhbuild, we keep ~/gtk by default (faster re-runs).
+# Build clean from scratch (wipe ~/gtk, ~/.cache/jhbuild, re-fetch; fixes paths/cache issues):
+#   JHBUILD_CLEAN=1 ./mac-setup/CI_jhbuild.sh
+# Don't use installed jhbuild (use gtk-osx-setup / pyenv instead):
+#   JHBUILD_USE_INSTALLED=0 ./mac-setup/CI_jhbuild.sh
 JHBUILD_CLEAN="${JHBUILD_CLEAN:-0}"
 
 get_lockfile_entry() {

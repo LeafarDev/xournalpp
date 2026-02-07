@@ -42,6 +42,14 @@ $ENSURE_JHBUILD cmake --build .
 $ENSURE_JHBUILD cmake --install . --prefix "$prefix_parent"/inst
 popd
 
+# Ensure llama/ggml dylibs are visible under build/lib for bundler prefix mapping
+mkdir -p "$build_dir/lib"
+for dylib in "$build_dir"/bin/libllama*.dylib "$build_dir"/bin/libggml*.dylib; do
+    if [ -f "$dylib" ]; then
+        ln -sf "$dylib" "$build_dir/lib/$(basename "$dylib")"
+    fi
+done
+
 echo "=== Criando .app bundle ==="
 cd "$SCRIPT_DIR"
 $ENSURE_JHBUILD bash "$SCRIPT_DIR/build-app.sh" "$prefix_parent"

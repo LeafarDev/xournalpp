@@ -81,6 +81,18 @@ export GTKDIR="$1/inst"
 echo "Replace Ctrl by Meta in mainmenubar.xml"
 sed -i -e 's/Ctrl/Meta/g' ./Xournal++.app/Contents/Resources/ui/mainmenubar.xml
 
+# Bundle aria2c so users don't need to install it (downloads in app will use it)
+bash "$(dirname "$0")/bundle-aria2.sh" ./Xournal++.app
+
+# Bundle Copilot CLI so users can use GitHub Copilot without installing it
+bash "$(dirname "$0")/bundle-copilot.sh" ./Xournal++.app
+
+# Bundle MicroTeX for chat LaTeX formula rendering (LaTeX→SVG headless)
+bash "$(dirname "$0")/bundle-microtex.sh" ./Xournal++.app
+
+# Bundle Tectonic TeX engine for LaTeX rendering without external installs
+bash "$(dirname "$0")/bundle-tectonic.sh" ./Xournal++.app
+
 echo "Create zip"
 zip --filesync -r Xournal++.zip Xournal++.app
 

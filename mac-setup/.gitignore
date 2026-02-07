@@ -16,3 +16,7 @@ sox-code
 libsndfile
 libzip*
 *.dmg
+
+# Cloned/build artifacts (bundle-microtex.sh clones here; do not commit)
+MicroTeX/
+microtex-deps/

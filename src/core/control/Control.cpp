@@ -1,6 +1,8 @@
 #include "Control.h"
 
 #include <algorithm>  // for max
+#include <atomic>
+#include <cstdio>
 #include <cstdlib>    // for size_t
 #include <exception>  // for exce...
 #include <functional>  // for bind
@@ -10,6 +12,9 @@
 #include <regex>       // for regex
 #include <string>      // for string
 #include <utility>     // for move
+#include <thread>
+
+#include <gio/gio.h>
 
 #include "control/AudioController.h"                             // for Audi...
 #include "control/ClipboardHandler.h"                            // for Clip...
@@ -19,6 +24,9 @@
 #include "control/SetsquareController.h"                         // for Sets...
 #include "control/Tool.h"                                        // for Tool
 #include "control/ToolHandler.h"                                 // for Tool...
+#include "ai/PDFContextExtractor.h"                              // for PDFContextExtractor
+#include "ai/LLMEngine.h"                                        // for LLMEngine
+#include "chat/ModelManager.h"
 #include "control/actions/ActionDatabase.h"                      // for Acti...
 #include "control/jobs/AutosaveJob.h"                            // for Auto...
 #include "control/jobs/BaseExportJob.h"                          // for Base...
@@ -36,6 +44,7 @@
 #include "control/settings/SettingsEnums.h"                      // for Button
 #include "control/settings/ViewModes.h"                          // for ViewM..
 #include "control/tools/TextEditor.h"                            // for Text...
+#include "control/tools/PdfElemSelection.h"                     // for PdfElemSelection
 #include "control/xojfile/LoadHandler.h"                         // for Load...
 #include "control/zoom/ZoomControl.h"                            // for Zoom...
 #include "gui/DockIconUpdater.h"                                  // for setDockIconFromPdfPath, clearDockIcon
@@ -1736,14 +1745,74 @@ void Control::fileLoaded(int scrollToPage) {
     getCursor()->updateCursor();
     updatePageActions();
 
+    const char* ctxTest = g_getenv("XOURNALPP_PDF_CONTEXT_TEST");
+    if (ctxTest && std::string(ctxTest) == "1") {
+        std::string selectedText;
+        if (auto* toolbox = this->win->getPdfToolbox(); toolbox && toolbox->hasSelection()) {
+            if (auto* selection = toolbox->getSelection()) {
+                selectedText = selection->getSelectedText();
+            }
+        }
+        std::string context = PDFContextExtractor::extract(this->doc, this->getCurrentPageNo(), selectedText);
+        g_message("PDF context (MVP): %s", context.c_str());
+    }
+
+    const char* chatTest = g_getenv("XOURNALPP_CHAT_TEST");
+    if (chatTest && std::string(chatTest) == "1") {
+        const char* modelPath = g_getenv("XOURNALPP_LLM_MODEL");
+        if (!modelPath || std::string(modelPath).empty()) {
+            g_warning("Chat test requested, but XOURNALPP_LLM_MODEL is not set.");
+        } else {
+            std::string selectedText;
+            if (auto* toolbox = this->win->getPdfToolbox(); toolbox && toolbox->hasSelection()) {
+                if (auto* selection = toolbox->getSelection()) {
+                    selectedText = selection->getSelectedText();
+                }
+            }
+            std::string context = PDFContextExtractor::extract(this->doc, this->getCurrentPageNo(), selectedText);
+            const char* questionEnv = g_getenv("XOURNALPP_CHAT_QUESTION");
+            std::string question = (questionEnv && *questionEnv) ? std::string(questionEnv)
+                                                                  : "Summarize the current page in 2 sentences.";
+
+            std::string prompt = "You are a helpful assistant.\n"
+                                 "Answer using only the following document context:\n\n" +
+                                 context + "\n\nQuestion:\n" + question + "\n";
+
+            std::string modelPathStr = modelPath;
+            std::thread([modelPathStr, prompt]() {
+                LLMEngine engine;
+                if (!engine.init(modelPathStr)) {
+                    g_warning("LLMEngine init failed for model: %s", modelPathStr.c_str());
+                    return;
+                }
+                std::string result = engine.run(prompt);
+                g_message("Chat response (MVP): %s", result.c_str());
+                engine.shutdown();
+            }).detach();
+        }
+    }
+
 #ifdef __APPLE__
     this->doc->lock();
     fs::path pdfPath = this->doc->getPdfFilepath();
+    fs::path docPath = this->doc->getEvMetadataFilename();
     this->doc->unlock();
     if (!pdfPath.empty()) {
         xoj::setDockIconFromPdfPath(pdfPath.string());
     } else {
         xoj::clearDockIcon();
+    }
+
+    fs::path labelPath = !docPath.empty() ? docPath : pdfPath;
+    if (!labelPath.empty()) {
+        std::string label = labelPath.filename().string();
+        constexpr size_t kMaxLen = 12;
+        if (label.size() > kMaxLen) {
+            label = label.substr(0, kMaxLen - 3) + "...";
+        }
+        xoj::setDockBadgeLabel(label);
+    } else {
+        xoj::clearDockBadgeLabel();
     }
 #endif
 }
@@ -2209,6 +2278,624 @@ void Control::showGtkDemo() {
     }
 
     g_subprocess_wait_async(process, nullptr, reinterpret_cast<GAsyncReadyCallback>(onGtkDemoShown), nullptr);
+}
+
+namespace {
+
+struct AskDialogData {
+    Control* ctrl = nullptr;
+    GtkWidget* dialog = nullptr;
+    GtkWidget* entry = nullptr;
+    GtkWidget* textView = nullptr;
+    GtkWidget* askButton = nullptr;
+    std::string modelPath;
+};
+
+struct AskResult {
+    GtkWidget* entry = nullptr;
+    GtkWidget* textView = nullptr;
+    GtkWidget* askButton = nullptr;
+    std::string text;
+};
+
+void setTextView(GtkWidget* textView, const std::string& text) {
+    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(textView));
+    gtk_text_buffer_set_text(buffer, text.c_str(), -1);
+}
+
+gboolean applyAskResult(gpointer data) {
+    auto* result = static_cast<AskResult*>(data);
+    if (result->textView) {
+        setTextView(result->textView, result->text);
+    }
+    if (result->entry) {
+        gtk_widget_set_sensitive(result->entry, true);
+    }
+    if (result->askButton) {
+        gtk_widget_set_sensitive(result->askButton, true);
+    }
+    if (result->entry) {
+        g_object_unref(result->entry);
+    }
+    if (result->textView) {
+        g_object_unref(result->textView);
+    }
+    if (result->askButton) {
+        g_object_unref(result->askButton);
+    }
+    delete result;
+    return G_SOURCE_REMOVE;
+}
+
+void askDialogDataFree(gpointer data) {
+    delete static_cast<AskDialogData*>(data);
+}
+
+void onAskDialogResponse(GtkDialog* dialog, gint response, gpointer userData) {
+    auto* data = static_cast<AskDialogData*>(userData);
+    if (!data || !data->ctrl) {
+        gtk_widget_destroy(GTK_WIDGET(dialog));
+        return;
+    }
+
+    if (response != GTK_RESPONSE_ACCEPT) {
+        gtk_widget_destroy(GTK_WIDGET(dialog));
+        return;
+    }
+
+    std::string modelPathStr = data->modelPath;
+    if (modelPathStr.empty()) {
+        setTextView(data->textView, "Model path not set.");
+        return;
+    }
+
+    const char* questionC = gtk_entry_get_text(GTK_ENTRY(data->entry));
+    std::string question = questionC ? std::string(questionC) : std::string();
+    if (question.empty()) {
+        setTextView(data->textView, "Please enter a question.");
+        return;
+    }
+
+    gtk_widget_set_sensitive(data->entry, false);
+    gtk_widget_set_sensitive(data->askButton, false);
+    setTextView(data->textView, "Thinking...");
+
+    Control* ctrl = data->ctrl;
+    Document* doc = ctrl->getDocument();
+    size_t pageNo = ctrl->getCurrentPageNo();
+    std::string selectedText;
+    if (auto* toolbox = ctrl->getWindow()->getPdfToolbox(); toolbox && toolbox->hasSelection()) {
+        if (auto* selection = toolbox->getSelection()) {
+            selectedText = selection->getSelectedText();
+        }
+    }
+    GtkWidget* entry = GTK_WIDGET(g_object_ref(data->entry));
+    GtkWidget* textView = GTK_WIDGET(g_object_ref(data->textView));
+    GtkWidget* askButton = GTK_WIDGET(g_object_ref(data->askButton));
+
+    std::thread([doc, pageNo, modelPathStr, question, selectedText, entry, textView, askButton]() {
+        std::string context = PDFContextExtractor::extract(doc, pageNo, selectedText);
+        std::string prompt = "You are a helpful assistant.\n"
+                             "Answer using only the following document context:\n\n" +
+                             context + "\n\nQuestion:\n" + question + "\n";
+
+        LLMEngine engine;
+        std::string resultText;
+        if (!engine.init(modelPathStr)) {
+            resultText = "Failed to load model.";
+        } else {
+            resultText = engine.run(prompt);
+            if (resultText.empty()) {
+                resultText = "No response.";
+            }
+            engine.shutdown();
+        }
+
+        auto* result = new AskResult{entry, textView, askButton, resultText};
+        g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, applyAskResult, result, nullptr);
+    }).detach();
+}
+
+struct DownloadDialogData {
+    GtkWidget* dialog = nullptr;
+    GtkWidget* progress = nullptr;
+    GtkWidget* label = nullptr;
+    GtkWidget* cancelButton = nullptr;
+    std::atomic<bool> cancelled{false};
+    std::atomic<GSubprocess*> process{nullptr};
+};
+
+struct DownloadProgressUpdate {
+    GtkWidget* progress = nullptr;
+    GtkWidget* label = nullptr;
+    double fraction = 0.0;
+    std::string text;
+    bool pulse = false;
+};
+
+struct DownloadCompletion {
+    DownloadDialogData* data = nullptr;
+    bool success = false;
+    std::string error;
+    std::function<void(bool, const std::string&)> callback;
+};
+
+std::string formatSizeGb(size_t bytes) {
+    double gb = static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.1f GB", gb);
+    return std::string(buf);
+}
+
+gboolean applyDownloadProgress(gpointer data) {
+    auto* update = static_cast<DownloadProgressUpdate*>(data);
+    if (update->progress) {
+        if (update->pulse) {
+            gtk_progress_bar_pulse(GTK_PROGRESS_BAR(update->progress));
+        } else {
+            gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(update->progress), update->fraction);
+        }
+    }
+    if (update->label && !update->text.empty()) {
+        gtk_label_set_text(GTK_LABEL(update->label), update->text.c_str());
+    }
+    if (update->progress) {
+        g_object_unref(update->progress);
+    }
+    if (update->label) {
+        g_object_unref(update->label);
+    }
+    delete update;
+    return G_SOURCE_REMOVE;
+}
+
+gboolean applyDownloadCompletion(gpointer data) {
+    auto* completion = static_cast<DownloadCompletion*>(data);
+    if (completion->data && completion->data->dialog) {
+        gtk_widget_destroy(completion->data->dialog);
+    }
+    if (completion->data) {
+        if (completion->data->dialog) {
+            g_object_unref(completion->data->dialog);
+        }
+        if (completion->data->progress) {
+            g_object_unref(completion->data->progress);
+        }
+        if (completion->data->label) {
+            g_object_unref(completion->data->label);
+        }
+        if (completion->data->cancelButton) {
+            g_object_unref(completion->data->cancelButton);
+        }
+        delete completion->data;
+    }
+    if (completion->callback) {
+        completion->callback(completion->success, completion->error);
+    }
+    delete completion;
+    return G_SOURCE_REMOVE;
+}
+
+void onDownloadDialogResponse(GtkDialog* dialog, gint response, gpointer userData) {
+    auto* data = static_cast<DownloadDialogData*>(userData);
+    if (!data) {
+        gtk_widget_destroy(GTK_WIDGET(dialog));
+        return;
+    }
+    if (response == GTK_RESPONSE_CANCEL || response == GTK_RESPONSE_DELETE_EVENT) {
+        data->cancelled.store(true);
+        if (data->cancelButton) {
+            gtk_widget_set_sensitive(data->cancelButton, false);
+        }
+        if (data->label) {
+            gtk_label_set_text(GTK_LABEL(data->label), "Cancelling...");
+        }
+        if (auto* proc = data->process.load()) {
+            g_subprocess_force_exit(proc);
+        }
+    }
+}
+
+void startModelDownload(Control* ctrl, const fs::path& destinationPath, const std::string& url,
+                        std::function<void(bool, const std::string&)> callback) {
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(_("Downloading model"), ctrl->getGtkWindow(),
+                                                    GTK_DIALOG_MODAL, _("Cancel"), GTK_RESPONSE_CANCEL, nullptr);
+    GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_container_add(GTK_CONTAINER(content), box);
+
+    GtkWidget* label = gtk_label_new(_("Downloading model..."));
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(box), label, FALSE, FALSE, 0);
+
+    GtkWidget* progress = gtk_progress_bar_new();
+    gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(progress), true);
+    gtk_box_pack_start(GTK_BOX(box), progress, FALSE, FALSE, 0);
+
+    GtkWidget* cancelButton = gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_CANCEL);
+
+    auto* data = new DownloadDialogData();
+    data->dialog = GTK_WIDGET(g_object_ref(dialog));
+    data->progress = GTK_WIDGET(g_object_ref(progress));
+    data->label = GTK_WIDGET(g_object_ref(label));
+    data->cancelButton = GTK_WIDGET(g_object_ref(cancelButton));
+
+    g_signal_connect(dialog, "response", G_CALLBACK(onDownloadDialogResponse), data);
+    gtk_widget_show_all(dialog);
+
+    std::thread([data, ctrl, destinationPath, url, callback = std::move(callback)]() mutable {
+        bool success = false;
+        std::string errorMsg;
+
+        try {
+            Util::ensureFolderExists(destinationPath.parent_path());
+        } catch (const std::exception& e) {
+            errorMsg = e.what();
+        }
+
+        if (errorMsg.empty()) {
+            fs::path tempPath = destinationPath;
+            tempPath += ".part";
+
+            // Option: use GitHub CLI (gh) with user's account when URL is a GitHub release
+            bool usedGh = false;
+            if (ctrl->getSettings()->getUseGhForModelDownload()) {
+                static const std::regex ghRe(
+                        R"(github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/([^?#]+))");
+                std::smatch m;
+                if (std::regex_search(url, m, ghRe)) {
+                    std::string owner = m[1].str();
+                    std::string repo = m[2].str();
+                    std::string tag = m[3].str();
+                    std::string asset = m[4].str();
+                    char* ghPath = g_find_program_in_path("gh");
+                    if (ghPath) {
+                        std::string gh(ghPath);
+                        g_free(ghPath);
+                        fs::path outDir = destinationPath.parent_path() / ".gh_dl";
+                        try {
+                            Util::ensureFolderExists(outDir);
+                        } catch (const std::exception&) {
+                            outDir = destinationPath.parent_path();
+                        }
+                        std::string outDirStr = outDir.string();
+                        std::string repoSpec = owner + "/" + repo;
+                        GError* err = nullptr;
+                        GSubprocess* proc = g_subprocess_new(
+                                G_SUBPROCESS_FLAGS_STDERR_PIPE, &err, gh.c_str(), "release", "download", tag.c_str(),
+                                "-R", repoSpec.c_str(), "-p", asset.c_str(), "-O", outDirStr.c_str(), nullptr);
+                        if (proc) {
+                            data->process.store(proc);
+                            GInputStream* errStream = g_subprocess_get_stderr_pipe(proc);
+                            std::string errTail;
+                            char readBuf[512];
+                            while (!data->cancelled.load()) {
+                                GError* readErr = nullptr;
+                                gssize bytes = g_input_stream_read(errStream, readBuf, sizeof(readBuf), nullptr, &readErr);
+                                if (bytes <= 0) {
+                                    if (readErr) g_error_free(readErr);
+                                    break;
+                                }
+                                errTail.append(readBuf, static_cast<size_t>(bytes));
+                                if (errTail.size() > 2048) errTail.erase(0, errTail.size() - 1024);
+                            }
+                            bool waitOk = g_subprocess_wait_check(proc, nullptr, &err);
+                            data->process.store(nullptr);
+                            g_object_unref(proc);
+                            if (err) {
+                                g_error_free(err);
+                                err = nullptr;
+                            }
+                            if (waitOk && !data->cancelled.load()) {
+                                fs::path downloaded = outDir / asset;
+                                if (fs::exists(downloaded) && fs::is_regular_file(downloaded)) {
+                                    try {
+                                        if (Util::safeRenameFile(downloaded, destinationPath)) {
+                                            success = true;
+                                            usedGh = true;
+                                        } else {
+                                            errorMsg = "Failed to finalize downloaded model.";
+                                        }
+                                    } catch (const std::exception& e) {
+                                        errorMsg = std::string("Failed to finalize: ") + e.what();
+                                    }
+                                    try {
+                                        if (outDir.filename() == ".gh_dl") fs::remove_all(outDir);
+                                    } catch (const std::exception&) {}
+                                } else {
+                                    errorMsg = "GitHub CLI download did not produce expected file.";
+                                }
+                            } else if (!data->cancelled.load() && !errTail.empty()) {
+                                errorMsg = "GitHub CLI: " + errTail;
+                            } else if (!data->cancelled.load()) {
+                                errorMsg = "GitHub CLI download failed. Run 'gh auth login' if needed.";
+                            }
+                            if (data->cancelled.load() && errorMsg.empty()) {
+                                errorMsg = "Download cancelled.";
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!usedGh) {
+            // Prefer aria2c: resume, multi-connection, retry, integrity check
+            std::string downloaderPath;
+            bool useAria2 = false;
+            {
+                fs::path bundled = Util::getBundledAria2Path();
+                if (!bundled.empty() && fs::exists(bundled) && fs::is_regular_file(bundled)) {
+                    downloaderPath = bundled.string();
+                    useAria2 = true;
+                }
+                if (downloaderPath.empty()) {
+                    char* found = g_find_program_in_path("aria2c");
+                    if (found) {
+                        downloaderPath = found;
+                        g_free(found);
+                        useAria2 = true;
+                    }
+                }
+                if (downloaderPath.empty() && fs::exists("/usr/bin/aria2c")) {
+                    downloaderPath = "/usr/bin/aria2c";
+                    useAria2 = true;
+                }
+            }
+            if (downloaderPath.empty()) {
+                if (fs::exists("/usr/bin/curl")) {
+                    downloaderPath = "/usr/bin/curl";
+                } else {
+                    char* found = g_find_program_in_path("curl");
+                    if (found) {
+                        downloaderPath = found;
+                        g_free(found);
+                    }
+                }
+            }
+
+            if (downloaderPath.empty()) {
+                errorMsg = "Neither aria2c nor curl found. Please install aria2 (recommended) or curl.";
+            }
+
+            if (useAria2) {
+                // Resume: do not remove existing .part so aria2 -c can continue
+            } else if (fs::exists(tempPath)) {
+                fs::remove(tempPath);
+            }
+
+            auto tempG = Util::toGFilename(tempPath);
+            GError* err = nullptr;
+            GSubprocess* proc = nullptr;
+            if (errorMsg.empty()) {
+                if (useAria2) {
+                    proc = g_subprocess_new(G_SUBPROCESS_FLAGS_STDERR_PIPE, &err, downloaderPath.c_str(),
+                                            "-c", "-x", "16", "-s", "16", "-k", "1M", "--file-allocation=none",
+                                            "--summary-interval=1", "--max-tries=0", "--retry-wait=3",
+                                            "-o", tempG.c_str(), url.c_str(), nullptr);
+                } else {
+                    proc = g_subprocess_new(G_SUBPROCESS_FLAGS_STDERR_PIPE, &err, downloaderPath.c_str(),
+                                            "-L", "--progress-bar", "-o", tempG.c_str(), url.c_str(), nullptr);
+                }
+            }
+            if (!proc) {
+                if (err) {
+                    errorMsg = err->message;
+                    g_error_free(err);
+                } else {
+                    errorMsg = "Failed to start download.";
+                }
+            } else {
+                data->process.store(proc);
+                GInputStream* errStream = g_subprocess_get_stderr_pipe(proc);
+                std::regex percentRe(R"((\d{1,3}(?:\.\d+)?)%)");
+                std::string buffer;
+                std::string errTail;
+                double lastPercent = -1.0;
+                char readBuf[4096];
+                while (!data->cancelled.load()) {
+                    GError* readErr = nullptr;
+                    gssize bytes = g_input_stream_read(errStream, readBuf, sizeof(readBuf), nullptr, &readErr);
+                    if (bytes <= 0) {
+                        if (readErr) {
+                            g_error_free(readErr);
+                        }
+                        break;
+                    }
+                    buffer.append(readBuf, static_cast<size_t>(bytes));
+                    errTail.append(readBuf, static_cast<size_t>(bytes));
+                    if (errTail.size() > 4096) {
+                        errTail.erase(0, errTail.size() - 2048);
+                    }
+                    if (buffer.size() > 8192) {
+                        buffer.erase(0, buffer.size() - 4096);
+                    }
+
+                    std::smatch match;
+                    bool found = false;
+                    std::string lastMatch;
+                    auto searchStart = buffer.cbegin();
+                    while (std::regex_search(searchStart, buffer.cend(), match, percentRe)) {
+                        found = true;
+                        lastMatch = match[1].str();
+                        searchStart = match.suffix().first;
+                    }
+
+                    if (found) {
+                        double percent = std::stod(lastMatch);
+                        if (percent != lastPercent) {
+                            lastPercent = percent;
+                            auto* update = new DownloadProgressUpdate{
+                                    GTK_WIDGET(g_object_ref(data->progress)), GTK_WIDGET(g_object_ref(data->label)),
+                                    percent / 100.0, "Downloading model... " + lastMatch + "%", false};
+                            g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, applyDownloadProgress, update, nullptr);
+                        }
+                    } else {
+                        auto* update = new DownloadProgressUpdate{GTK_WIDGET(g_object_ref(data->progress)),
+                                                                   GTK_WIDGET(g_object_ref(data->label)), 0.0,
+                                                                   "Downloading model...", true};
+                        g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, applyDownloadProgress, update, nullptr);
+                    }
+                }
+
+                bool waitOk = g_subprocess_wait_check(proc, nullptr, &err);
+                data->process.store(nullptr);
+                if (!waitOk) {
+                    if (data->cancelled.load()) {
+                        errorMsg = "Download cancelled.";
+                    } else if (err) {
+                        errorMsg = err->message;
+                    } else if (!errTail.empty()) {
+                        errorMsg = "Download failed: " + errTail;
+                    } else {
+                        errorMsg = "Download failed.";
+                    }
+                } else if (!data->cancelled.load()) {
+                    try {
+                        if (!Util::safeRenameFile(tempPath, destinationPath)) {
+                            errorMsg = "Failed to finalize downloaded model.";
+                        } else {
+                            success = true;
+                        }
+                    } catch (const std::exception& e) {
+                        errorMsg = std::string("Failed to finalize: ") + e.what();
+                    }
+                }
+
+                if (!success && fs::exists(tempPath) && !useAria2) {
+                    try {
+                        fs::remove(tempPath);
+                    } catch (const std::exception&) {
+                        // ignore cleanup failure
+                    }
+                }
+                // With aria2, keep .part on failure so user can retry and resume
+                if (err) {
+                    g_error_free(err);
+                }
+                g_object_unref(proc);
+            }
+            }  // end if (!usedGh)
+        }
+
+        auto* completion = new DownloadCompletion{data, success, errorMsg, std::move(callback)};
+        g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, applyDownloadCompletion, completion, nullptr);
+    }).detach();
+}
+
+void showAskDialog(Control* ctrl, const std::string& modelPathStr) {
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(_("Ask about this document"), ctrl->getGtkWindow(),
+                                                    GTK_DIALOG_MODAL, _("Ask"), GTK_RESPONSE_ACCEPT, _("Close"),
+                                                    GTK_RESPONSE_CLOSE, nullptr);
+
+    GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_container_add(GTK_CONTAINER(content), box);
+
+    GtkWidget* questionLabel = gtk_label_new(_("Question:"));
+    gtk_widget_set_halign(questionLabel, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(box), questionLabel, FALSE, FALSE, 0);
+
+    GtkWidget* entry = gtk_entry_new();
+    gtk_box_pack_start(GTK_BOX(box), entry, FALSE, FALSE, 0);
+
+    GtkWidget* answerLabel = gtk_label_new(_("Answer:"));
+    gtk_widget_set_halign(answerLabel, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(box), answerLabel, FALSE, FALSE, 0);
+
+    GtkWidget* scroller = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_size_request(scroller, 520, 220);
+
+    GtkWidget* textView = gtk_text_view_new();
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(textView), GTK_WRAP_WORD_CHAR);
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(textView), false);
+    gtk_container_add(GTK_CONTAINER(scroller), textView);
+    gtk_box_pack_start(GTK_BOX(box), scroller, TRUE, TRUE, 0);
+
+    GtkWidget* askButton = gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+
+    auto* data = new AskDialogData{ctrl, dialog, entry, textView, askButton, modelPathStr};
+    g_object_set_data_full(G_OBJECT(dialog), "ask-dialog-data", data, askDialogDataFree);
+    g_signal_connect(dialog, "response", G_CALLBACK(onAskDialogResponse), data);
+
+    gtk_widget_show_all(dialog);
+}
+}  // namespace
+
+void Control::askAboutDocument() {
+    ensureLLMModel([this](bool ok, const std::string& info) {
+        if (!ok) {
+            if (!info.empty()) {
+                XojMsgBox::showErrorToUser(getGtkWindow(), info);
+            }
+            return;
+        }
+        if (win) {
+            win->setChatVisible(true);
+        }
+    });
+}
+
+void Control::ensureLLMModel(std::function<void(bool, const std::string&)> callback) {
+    std::string modelId = settings ? settings->getChatModel() : "";
+    if (modelId.empty()) {
+        modelId = "phi3-mini-math";
+    }
+    ensureLLMModel(modelId, std::move(callback));
+}
+
+void Control::ensureLLMModel(const std::string& modelId, std::function<void(bool, const std::string&)> callback) {
+    const char* envModel = g_getenv("XOURNALPP_LLM_MODEL");
+    if (envModel && *envModel) {
+        fs::path envPath = envModel;
+        if (!fs::exists(envPath)) {
+            callback(false, "Model file not found. Set XOURNALPP_LLM_MODEL to a valid file.");
+            return;
+        }
+        callback(true, std::string(char_cast(envPath.u8string())));
+        return;
+    }
+
+    if (modelId == "copilot") {
+        callback(true, "copilot");
+        return;
+    }
+
+    auto modelOpt = xoj::chat::ModelManager::findById(modelId);
+    if (!modelOpt) {
+        callback(false, "Unknown model selection.");
+        return;
+    }
+    auto model = *modelOpt;
+    fs::path modelPath = xoj::chat::ModelManager::modelPath(model);
+    if (fs::exists(modelPath)) {
+        callback(true, std::string(char_cast(modelPath.u8string())));
+        return;
+    }
+    if (model.url.empty()) {
+        callback(false, "Download URL not configured for this model.");
+        return;
+    }
+
+    std::string sizeText = model.sizeBytes ? formatSizeGb(model.sizeBytes) : "unknown";
+    std::string msg = "This model is not installed. Size: " + sizeText + "\n\nDownload now?";
+    std::vector<XojMsgBox::Button> buttons = {{_("Download"), 1}, {_("Cancel"), 2}};
+    XojMsgBox::askQuestion(getGtkWindow(), _("Download model"), msg, buttons,
+                           [ctrl = this, modelPath, model, callback = std::move(callback)](int response) mutable {
+                               if (response != 1) {
+                                   callback(false, "Download cancelled.");
+                                   return;
+                               }
+                               startModelDownload(ctrl, modelPath, model.url,
+                                                  [callback = std::move(callback), modelPath](bool ok,
+                                                                                              const std::string& error) {
+                                                      if (!ok) {
+                                                          callback(false, error.empty() ? "Download failed." : error);
+                                                          return;
+                                                      }
+                                                      callback(true, std::string(char_cast(modelPath.u8string())));
+                                                  });
+                           });
 }
 
 auto Control::loadViewMode(ViewModeId mode) -> bool {

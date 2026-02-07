@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include <algorithm>
 #include <regex>
 
 #include <gdk-pixbuf/gdk-pixbuf.h>  // for gdk_pixbuf_new_fr...
@@ -31,6 +32,7 @@
 #include "gui/toolbarMenubar/model/ToolbarModel.h"      // for ToolbarModel
 #include "gui/widgets/SpinPageAdapter.h"                // for SpinPageAdapter
 #include "gui/widgets/XournalWidget.h"                  // for gtk_xournal_get_l...
+#include "chat/ChatPanel.h"
 #include "util/GListView.h"                             // for GListView, GListV...
 #include "util/GtkUtil.h"                               // for getWidgetDPI
 #include "util/PathUtil.h"                              // for getConfigFile
@@ -66,6 +68,7 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
         toolbar(std::make_unique<ToolMenuHandler>(control, this)),
         menubar(std::make_unique<Menubar>()) {
     gtk_window_set_application(GTK_WINDOW(getWindow()), parent);
+    gtk_window_set_resizable(GTK_WINDOW(getWindow()), true);
 
     panedContainerWidget.reset(get("panelMainContents"), xoj::util::ref);
     boxContainerWidget.reset(get("mainContentContainer"), xoj::util::ref);
@@ -85,6 +88,7 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
     initXournalWidget();
 
     setSidebarVisible(control->getSettings()->isSidebarVisible());
+    setChatVisible(control->getSettings()->isChatVisible());
 
     // Window handler
     g_signal_connect(this->window, "delete-event", xoj::util::wrap_for_g_callback_v<deleteEventCallback>,
@@ -291,11 +295,27 @@ void MainWindow::updateColorscheme() {
 }
 
 void MainWindow::initXournalWidget() {
+    GtkWidget* chatPaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    chatPanedWidget.reset(chatPaned, xoj::util::ref);
+#if GTK_MAJOR_VERSION == 3
+    gtk_box_pack_start(GTK_BOX(get("boxContents")), chatPaned, true, true, 0);
+#else
+    gtk_box_append(GTK_BOX(get("boxContents")), chatPaned);
+#endif
+    gtk_widget_set_hexpand(chatPaned, true);
+    gtk_widget_set_vexpand(chatPaned, true);
+    gtk_widget_show(chatPaned);
+
     winXournal = gtk_scrolled_window_new();
 
     setGtkTouchscreenScrollingForDeviceMapping();
 
-    gtk_box_append(GTK_BOX(get("boxContents")), winXournal);
+#if GTK_MAJOR_VERSION == 3
+    gtk_paned_pack1(GTK_PANED(chatPaned), winXournal, true, false);
+#else
+    gtk_paned_set_start_child(GTK_PANED(chatPaned), winXournal);
+    gtk_paned_set_resize_start_child(GTK_PANED(chatPaned), true);
+#endif
 
     GtkWidget* vpXournal = gtk_viewport_new(nullptr, nullptr);
 
@@ -309,6 +329,31 @@ void MainWindow::initXournalWidget() {
     gtk_widget_show_all(winXournal);
 
     scrollHandling->init(this->xournal->getWidget(), this->xournal->getLayout());
+
+    chatPanel = std::make_unique<xoj::chat::ChatPanel>(control, this);
+    chatWidget.reset(chatPanel->getWidget(), xoj::util::ref);
+#if GTK_MAJOR_VERSION == 3
+    gtk_paned_pack2(GTK_PANED(chatPaned), chatWidget.get(), false, false);
+#else
+    gtk_paned_set_end_child(GTK_PANED(chatPaned), chatWidget.get());
+#endif
+    gtk_widget_show_all(chatWidget.get());
+
+    g_signal_connect(chatPaned, "notify::position",
+                     G_CALLBACK(+[](GObject*, GParamSpec*, gpointer userData) {
+                         auto* win = static_cast<MainWindow*>(userData);
+                         if (!win || !win->chatVisible) {
+                             return;
+                         }
+                         int totalWidth = gtk_widget_get_width(win->chatPanedWidget.get());
+                         if (totalWidth <= 0) {
+                             return;
+                         }
+                         int pos = gtk_paned_get_position(GTK_PANED(win->chatPanedWidget.get()));
+                         int chatWidth = std::clamp(totalWidth - pos, 200, 480);
+                         win->control->getSettings()->setChatWidth(chatWidth);
+                     }),
+                     this);
 }
 
 void MainWindow::setGtkTouchscreenScrollingForDeviceMapping() {
@@ -325,6 +370,32 @@ void MainWindow::setGtkTouchscreenScrollingEnabled(bool enabled) {
     }
     gtk_scrolled_window_set_kinetic_scrolling(GTK_SCROLLED_WINDOW(winXournal), enabled);
 }
+
+void MainWindow::setChatVisible(bool visible) {
+    if (visible == this->chatVisible) {
+        return;
+    }
+    this->chatVisible = visible;
+    control->getSettings()->setChatVisible(visible);
+
+    if (!chatPanedWidget || !chatWidget || !chatPanel) {
+        return;
+    }
+
+    gtk_widget_set_visible(chatWidget.get(), visible);
+    if (visible) {
+        int contentWidth = gtk_widget_get_width(chatPanedWidget.get());
+        int chatWidth = std::clamp(control->getSettings()->getChatWidth(), 200, 480);
+        if (contentWidth > 0) {
+            gtk_paned_set_position(GTK_PANED(chatPanedWidget.get()), std::max(0, contentWidth - chatWidth));
+        }
+        chatPanel->focusInput();
+    } else {
+        gtk_paned_set_position(GTK_PANED(chatPanedWidget.get()), gtk_widget_get_width(chatPanedWidget.get()));
+    }
+}
+
+bool MainWindow::isChatVisible() const { return this->chatVisible; }
 
 auto MainWindow::getLayout() const -> Layout* { return this->xournal->getLayout(); }
 

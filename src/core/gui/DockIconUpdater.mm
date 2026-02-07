@@ -24,6 +24,28 @@ void clearDockIcon() {
     });
 }
 
+void clearDockBadgeLabel() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSApp dockTile] setBadgeLabel:nil];
+    });
+}
+
+void setDockBadgeLabel(const std::string& labelUtf8) {
+    if (labelUtf8.empty()) {
+        clearDockBadgeLabel();
+        return;
+    }
+
+    NSString* label = [NSString stringWithUTF8String:labelUtf8.c_str()];
+    if (!label || [label length] == 0) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSApp dockTile] setBadgeLabel:label];
+    });
+}
+
 void setDockIconFromPdfPath(const std::string& pdfPathUtf8) {
     if (pdfPathUtf8.empty()) {
         clearDockIcon();

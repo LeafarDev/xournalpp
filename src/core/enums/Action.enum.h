@@ -129,6 +129,8 @@ enum class Action : size_t {
 
     TOGGLE_TOUCH_DRAWING,
 
+    ASK_DOCUMENT,
+
     AUDIO_RECORD,
     AUDIO_PAUSE_PLAYBACK,
     AUDIO_STOP_PLAYBACK,
