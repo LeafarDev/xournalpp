@@ -40,6 +40,26 @@ std::string clampLatex(std::string text) {
     }
     return text;
 }
+
+std::string readStreamAll(GInputStream* stream) {
+    if (!stream) {
+        return {};
+    }
+    std::string out;
+    char buf[4096];
+    while (true) {
+        GError* readErr = nullptr;
+        gssize n = g_input_stream_read(stream, buf, sizeof(buf), nullptr, &readErr);
+        if (n <= 0) {
+            if (readErr) {
+                g_error_free(readErr);
+            }
+            break;
+        }
+        out.append(buf, static_cast<size_t>(n));
+    }
+    return StringUtils::trim(out);
+}
 }
 
 LatexRenderer::LatexRenderer(const LatexSettings& settings, std::string templateText) {
@@ -114,15 +134,17 @@ bool LatexRenderer::renderViaLatex2Svg(const std::string& latex, bool block, con
     std::string inputArg = std::string("-input=") + inputQuoted;
     g_free(inputQuoted);
     std::string outputArg = "-output=" + svgPath.string();
+    std::string latex2SvgPathStr = latex2SvgPath->string();
+    std::string svgPathStr = svgPath.string();
     const char* argv[] = {
-            latex2SvgPath->string().c_str(),
+            latex2SvgPathStr.c_str(),
             "-headless",
             inputArg.c_str(),
             outputArg.c_str(),
             nullptr
     };
     GError* procErr = nullptr;
-    GSubprocessLauncher* launcher = g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+    GSubprocessLauncher* launcher = g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_STDERR_PIPE);
     fs::path binDir = latex2SvgPath->parent_path();
     if (!binDir.empty()) {
         g_subprocess_launcher_set_cwd(launcher, binDir.string().c_str());
@@ -139,6 +161,7 @@ bool LatexRenderer::renderViaLatex2Svg(const std::string& latex, bool block, con
         return false;
     }
     gboolean success = g_subprocess_wait_check(proc, nullptr, &procErr);
+    std::string stderrText = readStreamAll(g_subprocess_get_stderr_pipe(proc));
     g_object_unref(proc);
     if (!success) {
         if (procErr) {
@@ -146,6 +169,9 @@ bool LatexRenderer::renderViaLatex2Svg(const std::string& latex, bool block, con
             g_error_free(procErr);
         } else {
             error = "LaTeX→SVG process failed.";
+        }
+        if (!stderrText.empty()) {
+            error += "\n" + stderrText;
         }
         return false;
     }
@@ -335,6 +361,11 @@ void LatexRenderer::renderAsync(const std::string& latex, bool block, GtkWidget*
         Util::ensureFolderExists(pngPath.parent_path());
         bool ok = renderToPng(latexCopy, block, pngPath, error);
         if (!ok) {
+            if (!error.empty()) {
+                g_warning("Chat LaTeX render failed: %s", error.c_str());
+            } else {
+                g_warning("Chat LaTeX render failed: unknown error");
+            }
             g_object_unref(image);
             return;
         }

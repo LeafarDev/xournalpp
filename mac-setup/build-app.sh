@@ -34,7 +34,7 @@ if [ ! -f "$GTK_MAC_BUNDLER" ]; then
   python3 -m venv "$GTK_MAC_BUNDLER_VENV"
 
   if [ ! -d gtk-mac-bundler ]; then
-    git clone --depth=1 https://gitlab.gnome.org/GNOME/gtk-mac-bundler.git
+    git clone --depth=1 --single-branch https://gitlab.gnome.org/GNOME/gtk-mac-bundler.git
   fi
   pushd gtk-mac-bundler
   # The install script assumes it will install to some global path
@@ -62,7 +62,7 @@ EOF
 
   echo 'include bundler/*.sh' > MANIFEST.in
   popd
-  "$GTK_MAC_BUNDLER_VENV"/bin/pip install ./gtk-mac-bundler
+  "$GTK_MAC_BUNDLER_VENV"/bin/pip install --no-deps ./gtk-mac-bundler
 fi
 
 if [ ! -f "$GTK_MAC_BUNDLER" ]; then
@@ -81,17 +81,14 @@ export GTKDIR="$1/inst"
 echo "Replace Ctrl by Meta in mainmenubar.xml"
 sed -i -e 's/Ctrl/Meta/g' ./Xournal++.app/Contents/Resources/ui/mainmenubar.xml
 
-# Bundle aria2c so users don't need to install it (downloads in app will use it)
-bash "$(dirname "$0")/bundle-aria2.sh" ./Xournal++.app
+# Bundle aria2c and Copilot CLI in parallel
+bash "$(dirname "$0")/bundle-aria2.sh" ./Xournal++.app &
+PID1=$!
+bash "$(dirname "$0")/bundle-copilot.sh" ./Xournal++.app &
+PID2=$!
+wait $PID1 $PID2
 
-# Bundle Copilot CLI so users can use GitHub Copilot without installing it
-bash "$(dirname "$0")/bundle-copilot.sh" ./Xournal++.app
-
-# Bundle MicroTeX for chat LaTeX formula rendering (LaTeX→SVG headless)
-bash "$(dirname "$0")/bundle-microtex.sh" ./Xournal++.app
-
-# Bundle Tectonic TeX engine for LaTeX rendering without external installs
-bash "$(dirname "$0")/bundle-tectonic.sh" ./Xournal++.app
+# MicroTeX and Tectonic removed from bundle: chat uses KaTeX in-browser; editor LaTeX uses system pdflatex (LatexGenerator) when Tectonic is not bundled. Re-add bundle-microtex.sh / bundle-tectonic.sh if needed.
 
 echo "Create zip"
 zip --filesync -r Xournal++.zip Xournal++.app

@@ -8,10 +8,15 @@
   <include href="gtk-osx.modules" />
 
   <repository type="tarball" name="github-tarball" href="https://github.com/"/>
+  <repository type="tarball" name="gnupg" href="https://gnupg.org/ftp/gcrypt/"/>
+  <repository type="tarball" name="gnome" href="https://download.gnome.org/sources/"/>
+  <repository type="tarball" name="gnu" href="https://ftp.gnu.org/gnu/"/>
   <repository type="tarball" name="poppler" href="https://poppler.freedesktop.org/"/>
   <repository type="tarball" name="libzip" href="https://libzip.org/download/"/>
   <repository type="tarball" name="portaudio" href="http://files.portaudio.com/archives/"/>
   <repository type="tarball" name="lua" href="http://www.lua.org/ftp/"/>
+  <repository type="tarball" name="webkitgtk" href="https://webkitgtk.org/releases/"/>
+  <repository type="tarball" name="webp" href="https://storage.googleapis.com/downloads.webmproject.org/releases/webp/"/>
 
   <cmake id="openjpeg">
     <branch repo="github-tarball"
@@ -45,6 +50,78 @@
             version="1.11.4"
             module="libzip-1.11.4.tar.gz"
             hash="sha256:82e9f2f2421f9d7c2466bbc3173cd09595a88ea37db0d559a9d0a2dc60dc722e"/>
+  </cmake>
+
+  <cmake id="libwebp" cmakeargs="-DBUILD_SHARED_LIBS=ON -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF -DWEBP_BUILD_GIF2WEBP=OFF -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF -DCMAKE_INSTALL_NAME_DIR='&#36;&lt;INSTALL_PREFIX&gt;/lib'">
+    <branch repo="webp"
+            version="1.4.0"
+            module="libwebp-1.4.0.tar.gz"
+            hash="sha256:61f873ec69e3be1b99535634340d5bde750b2e4447caa1db9f61be3fd49ab1e5"
+            checkoutdir="libwebp-1.4.0"/>
+  </cmake>
+
+  <autotools id="libpsl" autogenargs="--disable-runtime --disable-gtk-doc --disable-man"
+             supports-non-srcdir-builds="no" supports-install-destdir="no">
+    <branch repo="github-tarball"
+            version="0.21.5"
+            module="rockdaboot/libpsl/releases/download/0.21.5/libpsl-0.21.5.tar.gz"
+            hash="sha256:1dcc9ceae8b128f3c0b3f654decd0e1e891afc6ff81098f227ef260449dae208"
+            checkoutdir="libpsl-0.21.5"/>
+  </autotools>
+
+  <meson id="gsettings-desktop-schemas" mesonargs="-Dintrospection=false">
+    <branch repo="gnome"
+            version="46.1"
+            module="gsettings-desktop-schemas/46/gsettings-desktop-schemas-46.1.tar.xz"
+            hash="sha256:9b88101437a6958ebe6bbd812e49bbf1d09cc667011e415559d847e870468a61"
+            checkoutdir="gsettings-desktop-schemas-46.1"/>
+  </meson>
+
+  <meson id="glib-networking" mesonargs="-Dinstalled_tests=false -Dlibproxy=disabled -Dgnutls=disabled -Dopenssl=enabled">
+    <branch repo="gnome"
+            version="2.80.0"
+            module="glib-networking/2.80/glib-networking-2.80.0.tar.xz"
+            hash="sha256:d8f4f1aab213179ae3351617b59dab5de6bcc9e785021eee178998ebd4bb3acf"
+            checkoutdir="glib-networking-2.80.0"/>
+    <dependencies>
+      <dep package="gsettings-desktop-schemas"/>
+    </dependencies>
+  </meson>
+
+  <meson id="libsoup" mesonargs="-Dtests=false -Dgtk_doc=false -Dvapi=disabled">
+    <branch repo="gnome"
+            version="2.74.3"
+            module="libsoup/2.74/libsoup-2.74.3.tar.xz"
+            hash="sha256:e4b77c41cfc4c8c5a035fcdc320c7bc6cfb75ef7c5a034153df1413fa1d92f13"
+            checkoutdir="libsoup-2.74.3"/>
+    <dependencies>
+      <dep package="libxml2"/>
+      <dep package="libpsl"/>
+      <dep package="glib-networking"/>
+    </dependencies>
+  </meson>
+
+  <autotools id="libtasn1" autogenargs="--disable-doc --disable-nls"
+             supports-non-srcdir-builds="no" supports-install-destdir="no">
+    <branch repo="gnu"
+            version="4.20.0"
+            module="libtasn1/libtasn1-4.20.0.tar.gz"
+            hash="sha256:92e0e3bd4c02d4aeee76036b2ddd83f0c732ba4cda5cb71d583272b23587a76c"
+            checkoutdir="libtasn1-4.20.0"/>
+  </autotools>
+
+  <cmake id="webkitgtk" cmakeargs="-DPORT=GTK -DUSE_SOUP2=ON -DUSE_LIBSECRET=OFF -DUSE_GBM=OFF -DUSE_JPEGXL=OFF -DUSE_LIBHYPHEN=OFF -DUSE_WOFF2=OFF -DUSE_AVIF=OFF -DUSE_LCMS=OFF -DUSE_GSTREAMER=OFF -DENABLE_WEB_AUDIO=OFF -DENABLE_VIDEO=OFF -DENABLE_MEDIA_STREAM=OFF -DENABLE_JOURNALD_LOG=OFF -DENABLE_SPELLCHECK=OFF -DENABLE_GTK_DOC=OFF -DENABLE_MINIBROWSER=OFF -DENABLE_WEBKIT_LEGACY=OFF -DENABLE_GEOMETRY=OFF -DENABLE_DEVELOPER_MODE=OFF -DENABLE_GAMEPAD=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_NAME_DIR='&#36;&lt;INSTALL_PREFIX&gt;/lib'">
+    <branch repo="webkitgtk"
+            version="2.42.4"
+            module="webkitgtk-2.42.4.tar.xz"
+            hash="sha256:52288b30bda22373442cecb86f9c9a569ad8d4769a1f97b352290ed92a67ed86"/>
+    <patch file="patches/webkitgtk-oslog-printstream.patch" strip="1"/>
+    <patch file="patches/webkitgtk-abort-with-reason-spi.patch" strip="1"/>
+    <dependencies>
+      <dep package="libwebp"/>
+      <dep package="libsoup"/>
+      <dep package="libtasn1"/>
+    </dependencies>
   </cmake>
 
   <autotools id="portaudio" autogenargs="--enable-cxx --disable-mac-universal">
@@ -133,6 +210,33 @@
             checkoutdir="lua-5.4.8"/>
   </autotools>
 
+    <autotools id="libgpg-error" autogen-sh="configure"
+         autogenargs="CPPFLAGS=-D_DARWIN_C_SOURCE --disable-doc --disable-nls"
+         supports-non-srcdir-builds="no" supports-install-destdir="no"
+         makeargs="-j1">
+      <branch repo="gnupg"
+        module="libgpg-error/libgpg-error-1.58.tar.bz2"
+        hash="sha256:f943aea9a830a8bd938e5124b579efaece24a3225ff4c3d27611a80ce1260c27"
+        version="1.58"
+        checkoutdir="libgpg-error-1.58"
+        checkout_mode="clobber"/>
+    <patch file="patches/libgpg-error-environ-darwin.patch"/>
+  </autotools>
+
+  <autotools id="libgcrypt" autogen-sh="configure"
+             autogenargs="CPPFLAGS=-D_DARWIN_C_SOURCE --disable-doc --disable-nls"
+             supports-non-srcdir-builds="no" supports-install-destdir="no"
+             makeargs="-j1">
+    <branch repo="gnupg"
+            module="libgcrypt/libgcrypt-1.12.0.tar.bz2"
+            hash="sha256:0311454e678189bad62a7e9402a9dd793025efff6e7449898616e2fc75e0f4f5"
+            version="1.12.0"
+            checkoutdir="libgcrypt-1.12.0"/>
+    <dependencies>
+      <dep package="libgpg-error"/>
+    </dependencies>
+  </autotools>
+
   <autotools id="lua-gobject"
              skip-autogen="true"
              supports-non-srcdir-builds="no"
@@ -149,6 +253,8 @@
     </dependencies>
   </autotools>
 
+  <!-- macOS chat uses WKWebView only; do NOT add webkitgtk for macOS. On Linux only,
+       add <dep package="webkitgtk"/> here if you want WebView chat. -->
   <metamodule id="meta-xournalpp-deps">
     <dependencies>
       <dep package="libqpdf"/>
@@ -157,6 +263,8 @@
       <dep package="portaudio"/>
       <dep package="libsndfile"/>
       <dep package="lua-gobject"/>
+      <dep package="libgpg-error"/>
+      <dep package="libgcrypt"/>
     </dependencies>
   </metamodule>
 

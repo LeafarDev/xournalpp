@@ -161,6 +161,11 @@ configure_jhbuild_envvars() {
     unset PYTHONPATH
     unset PYTHONHOME
 
+    # Parallel builds: use all CPU cores for make/cmake/ninja within each jhbuild module
+    NPROC=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    export MAKEFLAGS="-j$NPROC"
+    export CMAKE_BUILD_PARALLEL_LEVEL="$NPROC"
+
     if [ "$JHBUILD_USE_INSTALLED" = "1" ]; then
         JHBUILD_BIN="$HOME/.local/bin"
         # gtk-osx jhbuildrc requires PYENV_ROOT and PYENV_VERSION; stub points at this machine's Python lib
@@ -182,9 +187,6 @@ configure_jhbuild_envvars() {
 # When using installed jhbuild, ensure the Python that runs jhbuild has deps installed (avoids breakage).
 # Sources: local mac-setup/jhbuild-python-requirements.txt, or set JHBUILD_REQUIREMENTS_URL to fetch from a URL.
 install_jhbuild_python_deps() {
-    if [ "$JHBUILD_USE_INSTALLED" != "1" ]; then
-        return 0
-    fi
     local req_file=""
     if [ -n "${JHBUILD_REQUIREMENTS_URL:-}" ]; then
         local tmp_req
@@ -205,12 +207,13 @@ install_jhbuild_python_deps() {
         return 0
     fi
     echo "Installing Python deps for jhbuild..."
-    python3 -m pip install --user -r "$req_file" || true
-    # Ensure pip-installed entrypoints (e.g. meson) are found before Homebrew's wrappers.
-    # This avoids issues when /opt/homebrew/bin/meson is tied to a broken brew-python env.
-    PY_USER_BIN="$(python3 -c 'import site; print(site.getuserbase() + \"/bin\")' 2>/dev/null || true)"
-    if [ -n "$PY_USER_BIN" ] && [ -d "$PY_USER_BIN" ]; then
-        export PATH="$PY_USER_BIN:$PATH"
+    JHBUILD_VENV="$HOME/.cache/jhbuild-venv"
+    python3 -m venv "$JHBUILD_VENV" || true
+    "$JHBUILD_VENV/bin/python" -m pip install -U pip setuptools wheel >/dev/null 2>&1 || true
+    "$JHBUILD_VENV/bin/python" -m pip install -r "$req_file" || true
+    # Ensure venv entrypoints (e.g. meson) are found before Homebrew's wrappers.
+    if [ -d "$JHBUILD_VENV/bin" ]; then
+        export PATH="$JHBUILD_VENV/bin:$PATH"
     fi
     [ "$req_file" = "$MAC_SETUP_DIR/jhbuild-python-requirements.txt" ] || rm -f "$req_file"
 }
@@ -235,11 +238,18 @@ module_cmakeargs['freetype'] = ' -DFT_DISABLE_BROTLI=TRUE '
 # portaudio may fail with parallel build, so disable parallel building.
 module_makeargs['portaudio'] = ' -j1 '
 
+# Default: use all CPU cores for make (overridden per-module above where needed)
+import multiprocessing
+makeargs = ' -j%d ' % multiprocessing.cpu_count()
+
 repos['ftp.gnu.org'] = 'https://ftpmirror.gnu.org/gnu/'
 
-# Force gtk-doc to use the same python that loaded this config (where pygments is installed).
-import site, sys
+    # Force gtk-doc to use the same python that loaded this config (where pygments is installed).
+import site, sys, os
 _usersite = site.getusersitepackages()
+_venv_bin = os.path.expanduser('~/.cache/jhbuild-venv/bin')
+if os.path.isdir(_venv_bin) and _venv_bin not in os.environ.get('PATH', ''):
+    os.environ['PATH'] = _venv_bin + os.pathsep + os.environ.get('PATH', '')
 _env = module_extra_env.get('gtk-doc', {}).copy()
 _env.update({
     'PYTHON': sys.executable,
@@ -258,6 +268,10 @@ EOF
 
     # MODULEFILE contains dependencies to other module sets - they need to be in the same directory
     cp "$MODULEFILE" "$HOME/gtk-osx-custom/modulesets-stable/"
+    if [ -d "$MAC_SETUP_DIR/patches" ]; then
+        mkdir -p "$HOME/gtk-osx-custom/modulesets-stable/patches"
+        rsync -a "$MAC_SETUP_DIR/patches/" "$HOME/gtk-osx-custom/modulesets-stable/patches/"
+    fi
     export MODULEFILE="$(basename $MODULEFILE)"
 
     echo "verbose=off" >> ~/.wgetrc
@@ -318,6 +332,14 @@ echo "::endgroup::"
 ### Step 5: build xournalpp deps
 
 build_xournalpp_deps() {
+    # Avoid stale libgpg-error/libgcrypt sources causing missing configure/ac.
+        rm -rf ~/gtk/source/libgpg-error-1.58 ~/gtk/source/libgcrypt-1.12.0 \
+            ~/gtk/build/libgpg-error-1.58 ~/gtk/build/libgcrypt-1.12.0 2>/dev/null || true
+    jhbuild -m "$MODULEFILE" clean libgpg-error libgcrypt || true
+    jhbuild -m "$MODULEFILE" update libgpg-error || true
+    if [ -f "$MAC_SETUP_DIR/patches/libgpg-error-environ-darwin.patch" ] && [ -d ~/gtk/source/libgpg-error-1.50 ]; then
+        (cd ~/gtk/source/libgpg-error-1.50 && patch -p1 -N < "$MAC_SETUP_DIR/patches/libgpg-error-environ-darwin.patch") || true
+    fi
     jhbuild -m "$MODULEFILE" build --no-network meta-xournalpp-deps
 }
 echo "::group::Build deps"

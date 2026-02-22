@@ -230,6 +230,8 @@ public:
     void setChatContext(const std::string& contextId);
     int getChatContextSize() const;
     void setChatContextSize(int size);
+    const std::string& getAnthropicApiKey() const;
+    void setAnthropicApiKey(const std::string& key);
 
     bool isToolbarVisible() const;
     void setToolbarVisible(bool visible);
@@ -676,6 +678,7 @@ private:
     bool useGhForModelDownload{};
     std::string chatContext;
     int chatContextSize{};
+    std::string anthropicApiKey;
 
     /**
      *  The Width of the Sidebar

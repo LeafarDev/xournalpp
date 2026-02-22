@@ -9,6 +9,8 @@
 #include <iostream>   // for operator<<, endl, basic_...
 #include <locale>     // for locale
 #include <memory>     // for unique_ptr, allocator
+#include <mutex>
+#include <fstream>
 #include <optional>   // for optional, nullopt
 #include <sstream>    // for stringstream
 #include <stdexcept>  // for runtime_error
@@ -317,6 +319,30 @@ struct XournalMainPrivate {
 };
 using XMPtr = XournalMainPrivate*;
 
+namespace {
+void setupFileLogging() {
+    static std::mutex logMutex;
+    static fs::path logPath = Util::getConfigSubfolder("") / "xournalpp.log";
+    g_log_set_handler(nullptr, G_LOG_LEVEL_MASK,
+                      +[](const gchar* logDomain, GLogLevelFlags logLevel, const gchar* message, gpointer) {
+                          std::lock_guard<std::mutex> lock(logMutex);
+                          std::ofstream out(logPath, std::ios::app);
+                          if (!out.is_open()) {
+                              g_log_default_handler(logDomain, logLevel, message, nullptr);
+                              return;
+                          }
+                          GDateTime* now = g_date_time_new_now_local();
+                          gchar* ts = g_date_time_format(now, "%Y-%m-%d %H:%M:%S");
+                          out << (ts ? ts : "") << " [" << (logDomain ? logDomain : "") << "] " << message << "\n";
+                          if (ts) g_free(ts);
+                          g_date_time_unref(now);
+                          out.flush();
+                          g_log_default_handler(logDomain, logLevel, message, nullptr);
+                      },
+                      nullptr);
+}
+}
+
 /// Checks for input method compatibility and ensures it
 void ensure_input_model_compatibility() {
     const char* imModule = g_getenv("GTK_IM_MODULE");
@@ -458,6 +484,7 @@ void on_open_files(GApplication* application, gpointer f, gint numFiles, gchar* 
 void on_startup(GApplication* application, XMPtr app_data) {
     XournalMain::initLocalisation();
     ensure_input_model_compatibility();
+    setupFileLogging();
     const MigrateResult migrateResult = migrateSettings();
 
     app_data->gladePath = std::make_unique<GladeSearchpath>();
@@ -468,7 +495,8 @@ void on_startup(GApplication* application, XMPtr app_data) {
     app_data->control = std::make_unique<Control>(application, app_data->gladePath.get(), app_data->disableAudio);
 
     auto& globalLatexTemplatePath = app_data->control->getSettings()->latexSettings.globalTemplatePath;
-    if (globalLatexTemplatePath.empty()) {
+    const bool templateMissing = globalLatexTemplatePath.empty() || !fs::is_regular_file(globalLatexTemplatePath);
+    if (templateMissing) {
         fs::path defaultTemplatePath = Util::getDataPath() / "default_template.tex";
         if (!fs::exists(defaultTemplatePath)) {
             fs::path resourceDir = findResourcePath("default_template.tex");
@@ -653,11 +681,23 @@ void XournalMain::initLocalisation() {
     // Not working on GNU g++(mingww) forWindows! Only working on Linux/macOS and with msvc
     try {
         std::locale::global(std::locale(""));  // "" - system default locale
-    } catch (const std::runtime_error& e) {
+    } catch (const std::exception& e) {
         g_warning("XournalMain: System default locale could not be set.\n - Caused by: %s\n - Note that it is not "
                   "supported to set the locale using mingw-w64 on windows.\n - This could be solved by compiling "
                   "xournalpp with msvc",
                   e.what());
+        try {
+            std::locale::global(std::locale("en_US.UTF-8"));
+        } catch (...) {
+            std::locale::global(std::locale::classic());
+        }
+    } catch (...) {
+        g_warning("XournalMain: System default locale could not be set (unknown exception).");
+        try {
+            std::locale::global(std::locale("en_US.UTF-8"));
+        } catch (...) {
+            std::locale::global(std::locale::classic());
+        }
     }
 
     initCAndCoutLocales();

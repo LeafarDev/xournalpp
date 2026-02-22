@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html,body{margin:0;height:100%;overflow:hidden;}
+#chat-root{height:100%;display:flex;flex-direction:column;overflow:hidden;}
+#messages{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:8px;box-sizing:border-box;
+display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;}
+.user{background:#007aff;color:#fff;padding:8px 10px;border-radius:10px;align-self:flex-end;max-width:80%;}
+.assistant{background:#2d2f33;color:#fff;padding:8px 10px;border-radius:10px;align-self:flex-start;max-width:80%;}
+.system{background:#3a3a3a;color:#fff;padding:8px 10px;border-radius:10px;align-self:center;max-width:90%;}
+</style>
+</head>
+<body>
+<div id="chat-root"><div id="messages"></div></div>
+<script>
+var root=document.getElementById('messages');
+var currentDiv=null;
+function scrollToBottom(){root.scrollTop=root.scrollHeight;}
+function startAssistantMessage(){currentDiv=document.createElement('div');currentDiv.className='assistant';root.appendChild(currentDiv);scrollToBottom();}
+function appendToken(t){if(!currentDiv)startAssistantMessage();currentDiv.innerHTML+=t;scrollToBottom();}
+function addUserMessage(t){var d=document.createElement('div');d.className='user';d.textContent=t;root.appendChild(d);scrollToBottom();}
+function finalizeMessage(){currentDiv=null;scrollToBottom();}
+function clearConversation(){root.innerHTML='';currentDiv=null;}
+function showSystemNotice(t){var d=document.createElement('div');d.className='system';d.textContent=t;root.appendChild(d);scrollToBottom();}
+</script>
+</body>
+</html>

@@ -41,10 +41,8 @@ class FloatingToolbox;
 class GladeSearchpath;
 
 class Menubar;
-namespace xoj::chat {
-class ChatPanel;
-}
-
+class ChatController;
+class ChatView;
 typedef std::array<xoj::util::WidgetSPtr, TOOLBAR_DEFINITIONS_LEN> ToolbarWidgetArray;
 
 class MainWindow: public GladeGui {
@@ -89,10 +87,12 @@ public:
     void setMenubarVisible(bool visible);
     void setSidebarVisible(bool visible);
     void setToolbarVisible(bool visible);
-    void setChatVisible(bool visible);
-    bool isChatVisible() const;
 
     Control* getControl() const;
+    ChatController* getChatController() const;
+
+    /// Update chat UI button states (called when message starts/completes)
+    void updateChatButtonStates(bool messageInFlight);
 
     PdfFloatingToolbox* getPdfToolbox() const;
     FloatingToolbox* getFloatingToolbox() const;
@@ -199,8 +199,20 @@ private:
     xoj::util::WidgetSPtr mainContentWidget;
     xoj::util::WidgetSPtr sidebarWidget;
 
-    xoj::util::WidgetSPtr chatPanedWidget;
-    xoj::util::WidgetSPtr chatWidget;
-    std::unique_ptr<xoj::chat::ChatPanel> chatPanel;
-    bool chatVisible = false;
+    // Chat panel (right side of the main content)
+    xoj::util::WidgetSPtr chatContainerWidget;
+    xoj::util::WidgetSPtr chatHeaderWidget;
+    xoj::util::WidgetSPtr chatSettingsWidget;
+    xoj::util::WidgetSPtr chatInputWidget;
+    xoj::util::WidgetSPtr chatEntryWidget;
+    xoj::util::WidgetSPtr chatModelCombo;
+    xoj::util::WidgetSPtr chatContextCombo;
+    xoj::util::WidgetSPtr chatContextSizeSpin;
+    xoj::util::WidgetSPtr chatUseGhCheck;
+    xoj::util::WidgetSPtr chatSendButton;
+    xoj::util::WidgetSPtr chatStopButton;
+
+    std::unique_ptr<ChatView> chatView;
+    std::unique_ptr<ChatController> chatController;
+
 };

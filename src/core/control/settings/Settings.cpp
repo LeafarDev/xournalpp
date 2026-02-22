@@ -457,6 +457,8 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->chatContext = reinterpret_cast<const char*>(value);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("chatContextSize")) == 0) {
         this->chatContextSize = std::max<int>(g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10), 1000);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("anthropicApiKey")) == 0) {
+        this->anthropicApiKey = reinterpret_cast<const char*>(value);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarNumberingStyle")) == 0) {
         int num = std::stoi(reinterpret_cast<char*>(value));
         if (num < static_cast<int>(SidebarNumberingStyle::MIN) || static_cast<int>(SidebarNumberingStyle::MAX) < num) {
@@ -1050,6 +1052,7 @@ void Settings::save() {
     SAVE_BOOL_PROP(useGhForModelDownload);
     SAVE_STRING_PROP(chatContext);
     SAVE_INT_PROP(chatContextSize);
+    SAVE_STRING_PROP(anthropicApiKey);
     xmlNode = saveProperty("sidebarNumberingStyle", static_cast<int>(sidebarNumberingStyle), root);
 
     SAVE_BOOL_PROP(sidebarOnRight);
@@ -2101,6 +2104,16 @@ void Settings::setChatContextSize(int size) {
         return;
     }
     this->chatContextSize = size;
+    save();
+}
+
+auto Settings::getAnthropicApiKey() const -> const std::string& { return this->anthropicApiKey; }
+
+void Settings::setAnthropicApiKey(const std::string& key) {
+    if (this->anthropicApiKey == key) {
+        return;
+    }
+    this->anthropicApiKey = key;
     save();
 }
 

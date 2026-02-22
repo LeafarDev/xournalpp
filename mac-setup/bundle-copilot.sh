@@ -15,10 +15,10 @@ is_valid_copilot() {
   local bin="$1"
   [ -x "$bin" ] || return 1
   # Avoid VS Code Copilot Chat shim (not a real Copilot CLI)
-  if head -n 2 "$bin" | grep -qi "copilotCLIShim"; then
+  if grep -qi "copilotCLIShim" "$bin"; then
     return 1
   fi
-  if head -n 2 "$bin" | grep -qi "Code Helper (Plugin)"; then
+  if grep -qi "Code Helper (Plugin)" "$bin"; then
     return 1
   fi
   local ver

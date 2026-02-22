@@ -170,6 +170,8 @@ auto system_single_byte_filename(const fs::path& path) -> std::string;
 [[maybe_unused]] [[nodiscard]] fs::path getLatex2SvgPath();
 /// Path to bundled Tectonic TeX engine (empty if not bundled). Checks bundled then PATH for "tectonic".
 [[maybe_unused]] [[nodiscard]] fs::path getBundledTectonicPath();
+/// Path to default LaTeX template (default_template.tex). Used as fallback for chat when globalTemplatePath is not set.
+[[maybe_unused]] [[nodiscard]] fs::path getDefaultLatexTemplatePath();
 fs::path getBuiltInPaletteDirectoryPath();
 fs::path getCustomPaletteDirectoryPath();
 

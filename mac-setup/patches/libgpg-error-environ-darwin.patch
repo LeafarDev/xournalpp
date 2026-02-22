@@ -1,0 +1,15 @@
+diff --git a/src/spawn-posix.c b/src/spawn-posix.c
+index 1111111..2222222 100644
+--- a/src/spawn-posix.c
++++ b/src/spawn-posix.c
+@@ -39,5 +39,10 @@
+ #include <fcntl.h>
+ 
+ #include <sys/socket.h>
+ #include <sys/wait.h>
++
++#if defined(__APPLE__)
++extern char **environ;
++#endif
++
+ #ifdef HAVE_GETRLIMIT

@@ -1,0 +1,24 @@
+diff --git a/Source/WTF/wtf/spi/darwin/AbortWithReasonSPI.h b/Source/WTF/wtf/spi/darwin/AbortWithReasonSPI.h
+new file mode 100644
+index 000000000000..000000000001
+--- /dev/null
++++ b/Source/WTF/wtf/spi/darwin/AbortWithReasonSPI.h
+@@ -0,0 +1,21 @@
++/*
++ * Copyright (C) 2024
++ * Stub for WebKitGTK tarball builds on macOS that lack this SPI header.
++ */
++
++#ifndef WTF_spi_darwin_AbortWithReasonSPI_h
++#define WTF_spi_darwin_AbortWithReasonSPI_h
++
++#if OS(DARWIN)
++
++#ifndef OS_REASON_WEBKIT
++#define OS_REASON_WEBKIT 0
++#endif
++
++#endif /* OS(DARWIN) */
++
++#endif /* WTF_spi_darwin_AbortWithReasonSPI_h */
++

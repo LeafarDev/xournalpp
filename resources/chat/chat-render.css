@@ -1,0 +1,102 @@
+:root {
+  color-scheme: light dark;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: transparent;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* macOS: scroll is HTML-based (WKWebView has no scrollView). Root gets definite height; #messages is the overflow-y:auto scroll container. min-height:0 on flex child allows it to shrink and scroll. */
+#chat-root {
+  height: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-bubble {
+  padding: 12px 14px;
+  border-radius: 12px;
+  display: inline-block;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-wrap: break-word;
+}
+
+.chat-user {
+  background: #285e9f;
+  color: #ffffff;
+}
+
+.chat-assistant {
+  background: #2d2f33;
+  color: #ffffff;
+}
+
+.chat-system {
+  background: #3a3a3a;
+  color: #ffffff;
+}
+
+.theme-light .chat-assistant {
+  background: #f2f2f2;
+  color: #222222;
+}
+
+.theme-light .chat-user {
+  background: #2b6cb0;
+  color: #ffffff;
+}
+
+.theme-light .chat-system {
+  background: #e6e6e6;
+  color: #222222;
+}
+
+.md-seg p {
+  margin: 0 0 8px 0;
+}
+
+.md-seg p:last-child {
+  margin-bottom: 0;
+}
+
+.latex-inline {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 2px;
+}
+
+.latex-block {
+  display: block;
+  margin: 8px 0;
+  text-align: center;
+}
+
+.latex-error {
+  color: #ff6b6b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.katex {
+  font-size: 1.05em;
+}

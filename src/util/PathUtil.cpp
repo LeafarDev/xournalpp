@@ -172,6 +172,33 @@ auto Util::getBundledTectonicPath() -> fs::path {
     return {};
 }
 
+auto Util::getDefaultLatexTemplatePath() -> fs::path {
+    fs::path p = getDataPath() / "default_template.tex";
+    if (fs::exists(p) && fs::is_regular_file(p)) {
+        return p;
+    }
+    auto search = [](const fs::path& file) -> fs::path {
+        fs::path start = getExePath().parent_path();
+        for (int i = 0; i < 3; ++i, start = start.parent_path()) {
+            if (auto target = start / file; fs::exists(target) && fs::is_regular_file(target)) {
+                return target;
+            }
+            if (auto target = start / "share" / PROJECT_NAME / file;
+                fs::exists(target) && fs::is_regular_file(target)) {
+                return target;
+            }
+        }
+        return {};
+    };
+    if (auto r = search("default_template.tex"); !r.empty()) {
+        return r;
+    }
+    if (auto r = search("resources/default_template.tex"); !r.empty()) {
+        return r;
+    }
+    return {};
+}
+
 /**
  * Read a file to a string
  *

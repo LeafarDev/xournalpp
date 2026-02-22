@@ -32,7 +32,6 @@
 #include "gui/toolbarMenubar/model/ToolbarModel.h"      // for ToolbarModel
 #include "gui/widgets/SpinPageAdapter.h"                // for SpinPageAdapter
 #include "gui/widgets/XournalWidget.h"                  // for gtk_xournal_get_l...
-#include "chat/ChatPanel.h"
 #include "util/GListView.h"                             // for GListView, GListV...
 #include "util/GtkUtil.h"                               // for getWidgetDPI
 #include "util/PathUtil.h"                              // for getConfigFile
@@ -43,6 +42,9 @@
 #include "util/gtk4_helper.h"                           // for gtk_widget_get_width
 #include "util/i18n.h"                                  // for FS, _F
 #include "util/raii/CStringWrapper.h"                   // for OwnedCString
+
+#include "ai/ChatController.h"
+#include "chat/ChatView.h"
 
 #include "GladeSearchpath.h"     // for GladeSearchpath
 #include "ToolbarDefinitions.h"  // for TOOLBAR_DEFINITIO...
@@ -88,7 +90,6 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
     initXournalWidget();
 
     setSidebarVisible(control->getSettings()->isSidebarVisible());
-    setChatVisible(control->getSettings()->isChatVisible());
 
     // Window handler
     g_signal_connect(this->window, "delete-event", xoj::util::wrap_for_g_callback_v<deleteEventCallback>,
@@ -295,65 +296,283 @@ void MainWindow::updateColorscheme() {
 }
 
 void MainWindow::initXournalWidget() {
-    GtkWidget* chatPaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    chatPanedWidget.reset(chatPaned, xoj::util::ref);
+    // Horizontal paned: Xournal (left, resizable) | Chat panel (right, fixed)
+    GtkWidget* hPane = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_hexpand(hPane, true);
+    gtk_widget_set_vexpand(hPane, true);
 #if GTK_MAJOR_VERSION == 3
-    gtk_box_pack_start(GTK_BOX(get("boxContents")), chatPaned, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(get("boxContents")), hPane, true, true, 0);
 #else
-    gtk_box_append(GTK_BOX(get("boxContents")), chatPaned);
+    gtk_box_append(GTK_BOX(get("boxContents")), hPane);
 #endif
-    gtk_widget_set_hexpand(chatPaned, true);
-    gtk_widget_set_vexpand(chatPaned, true);
-    gtk_widget_show(chatPaned);
+    gtk_widget_show(hPane);  // must be shown explicitly — children's show_all does not bubble up
 
+    // ---- Left pane: Xournal scrolled window ----
     winXournal = gtk_scrolled_window_new();
-
     setGtkTouchscreenScrollingForDeviceMapping();
-
+    gtk_widget_set_hexpand(winXournal, true);
+    gtk_widget_set_vexpand(winXournal, true);
 #if GTK_MAJOR_VERSION == 3
-    gtk_paned_pack1(GTK_PANED(chatPaned), winXournal, true, false);
+    gtk_paned_pack1(GTK_PANED(hPane), winXournal, TRUE, FALSE);
 #else
-    gtk_paned_set_start_child(GTK_PANED(chatPaned), winXournal);
-    gtk_paned_set_resize_start_child(GTK_PANED(chatPaned), true);
+    gtk_paned_set_start_child(GTK_PANED(hPane), winXournal);
+    gtk_paned_set_resize_start_child(GTK_PANED(hPane), true);
+    gtk_paned_set_shrink_start_child(GTK_PANED(hPane), false);
 #endif
 
     GtkWidget* vpXournal = gtk_viewport_new(nullptr, nullptr);
-
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(winXournal), vpXournal);
-
     scrollHandling = std::make_unique<ScrollHandling>(GTK_SCROLLED_WINDOW(winXournal));
-
     this->xournal = std::make_unique<XournalView>(vpXournal, control, scrollHandling.get());
-
     control->getZoomControl()->initZoomHandler(this->window, winXournal, xournal.get(), control);
     gtk_widget_show_all(winXournal);
-
     scrollHandling->init(this->xournal->getWidget(), this->xournal->getLayout());
 
-    chatPanel = std::make_unique<xoj::chat::ChatPanel>(control, this);
-    chatWidget.reset(chatPanel->getWidget(), xoj::util::ref);
-#if GTK_MAJOR_VERSION == 3
-    gtk_paned_pack2(GTK_PANED(chatPaned), chatWidget.get(), false, false);
-#else
-    gtk_paned_set_end_child(GTK_PANED(chatPaned), chatWidget.get());
-#endif
-    gtk_widget_show_all(chatWidget.get());
+    // ---- Right pane: Chat panel ----
+    chatView = std::make_unique<ChatView>(control->getSettings());
 
-    g_signal_connect(chatPaned, "notify::position",
-                     G_CALLBACK(+[](GObject*, GParamSpec*, gpointer userData) {
-                         auto* win = static_cast<MainWindow*>(userData);
-                         if (!win || !win->chatVisible) {
-                             return;
+    GtkWidget* chatPanel = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(chatPanel, "chat-panel");
+    gtk_widget_set_size_request(chatPanel, 320, -1);
+    chatContainerWidget.reset(chatPanel, xoj::util::adopt);
+
+    // Header
+    GtkWidget* header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_add_css_class(header, "chat-header");
+    gtk_widget_set_margin_start(header, 8);
+    gtk_widget_set_margin_end(header, 8);
+    gtk_widget_set_margin_top(header, 6);
+    gtk_widget_set_margin_bottom(header, 6);
+    chatHeaderWidget.reset(header, xoj::util::adopt);
+    GtkWidget* titleLabel = gtk_label_new("AI Chat");
+    gtk_widget_add_css_class(titleLabel, "chat-title");
+    gtk_widget_set_hexpand(titleLabel, TRUE);
+    gtk_label_set_xalign(GTK_LABEL(titleLabel), 0.0f);
+#if GTK_MAJOR_VERSION == 3
+    gtk_box_pack_start(GTK_BOX(header), titleLabel, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(chatPanel), header, FALSE, FALSE, 0);
+#else
+    gtk_box_append(GTK_BOX(header), titleLabel);
+    gtk_box_append(GTK_BOX(chatPanel), header);
+#endif
+
+    // Settings bar: model selector + context selector
+    GtkWidget* settingsBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_add_css_class(settingsBar, "chat-settings");
+    gtk_widget_set_margin_start(settingsBar, 8);
+    gtk_widget_set_margin_end(settingsBar, 8);
+    gtk_widget_set_margin_top(settingsBar, 4);
+    gtk_widget_set_margin_bottom(settingsBar, 4);
+    chatSettingsWidget.reset(settingsBar, xoj::util::adopt);
+
+    GtkWidget* modelLabel = gtk_label_new("Model:");
+    GtkWidget* modelCombo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "claude", "Claude");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "copilot", "Copilot");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "llama-3.2-1b",
+                              "Llama 3.2 1B Instruct (local, ~770 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "mpt-7b", "MPT-7B (local, ~4.3 GB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "wizardmath-7b",
+                              "WizardMath-7B (math, ~4.1 GB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "local", "Local LLaMA (custom)");
+    {
+        const std::string& saved = control->getSettings()->getChatModel();
+        gtk_combo_box_set_active_id(GTK_COMBO_BOX(modelCombo),
+                                    saved.empty() ? "claude" : saved.c_str());
+    }
+    chatModelCombo.reset(modelCombo, xoj::util::adopt);
+    g_signal_connect(modelCombo, "changed", G_CALLBACK(+[](GtkComboBox* cb, gpointer data) {
+                         auto* mw = static_cast<MainWindow*>(data);
+                         const gchar* id = gtk_combo_box_get_active_id(cb);
+                         if (id) {
+                             mw->control->getSettings()->setChatModel(id);
+                             // Show the API key row only for Claude
+                             gtk_widget_set_visible(mw->chatUseGhCheck.get(),
+                                                    std::string(id) == "claude");
                          }
-                         int totalWidth = gtk_widget_get_width(win->chatPanedWidget.get());
-                         if (totalWidth <= 0) {
-                             return;
-                         }
-                         int pos = gtk_paned_get_position(GTK_PANED(win->chatPanedWidget.get()));
-                         int chatWidth = std::clamp(totalWidth - pos, 200, 480);
-                         win->control->getSettings()->setChatWidth(chatWidth);
                      }),
                      this);
+
+    GtkWidget* ctxLabel = gtk_label_new("Context:");
+    GtkWidget* ctxCombo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(ctxCombo), "current_page", "Page");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(ctxCombo), "document", "Document");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(ctxCombo), "selection", "Selection");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(ctxCombo), "none", "None");
+    {
+        const std::string& saved = control->getSettings()->getChatContext();
+        gtk_combo_box_set_active_id(GTK_COMBO_BOX(ctxCombo),
+                                    saved.empty() ? "current_page" : saved.c_str());
+    }
+    chatContextCombo.reset(ctxCombo, xoj::util::adopt);
+    g_signal_connect(ctxCombo, "changed", G_CALLBACK(+[](GtkComboBox* cb, gpointer data) {
+                         auto* mw = static_cast<MainWindow*>(data);
+                         const gchar* id = gtk_combo_box_get_active_id(cb);
+                         if (id) {
+                             mw->control->getSettings()->setChatContext(id);
+                         }
+                     }),
+                     this);
+
+#if GTK_MAJOR_VERSION == 3
+    gtk_box_pack_start(GTK_BOX(settingsBar), modelLabel, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(settingsBar), modelCombo, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(settingsBar), ctxLabel, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(settingsBar), ctxCombo, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(chatPanel), settingsBar, FALSE, FALSE, 0);
+#else
+    gtk_box_append(GTK_BOX(settingsBar), modelLabel);
+    gtk_box_append(GTK_BOX(settingsBar), modelCombo);
+    gtk_box_append(GTK_BOX(settingsBar), ctxLabel);
+    gtk_box_append(GTK_BOX(settingsBar), ctxCombo);
+    gtk_box_append(GTK_BOX(chatPanel), settingsBar);
+#endif
+
+    // API key row — only visible when Claude is selected
+    GtkWidget* apiKeyBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_add_css_class(apiKeyBar, "chat-settings");
+    gtk_widget_set_margin_start(apiKeyBar, 8);
+    gtk_widget_set_margin_end(apiKeyBar, 8);
+    gtk_widget_set_margin_bottom(apiKeyBar, 4);
+    chatUseGhCheck.reset(apiKeyBar, xoj::util::adopt);
+
+    GtkWidget* apiKeyLabel = gtk_label_new("API Key:");
+    GtkWidget* apiKeyEntry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(apiKeyEntry), "sk-ant-…");
+    gtk_entry_set_visibility(GTK_ENTRY(apiKeyEntry), FALSE);  // password-style
+    gtk_widget_set_hexpand(apiKeyEntry, TRUE);
+    chatContextSizeSpin.reset(apiKeyEntry, xoj::util::adopt);
+    {
+        const std::string& saved = control->getSettings()->getAnthropicApiKey();
+        if (!saved.empty()) {
+            gtk_entry_set_text(GTK_ENTRY(apiKeyEntry), saved.c_str());
+        }
+    }
+    g_signal_connect(apiKeyEntry, "changed",
+                     G_CALLBACK(+[](GtkEditable* ed, gpointer data) {
+                         auto* mw = static_cast<MainWindow*>(data);
+                         const gchar* txt = gtk_entry_get_text(GTK_ENTRY(ed));
+                         mw->control->getSettings()->setAnthropicApiKey(txt ? txt : "");
+                     }),
+                     this);
+
+#if GTK_MAJOR_VERSION == 3
+    gtk_box_pack_start(GTK_BOX(apiKeyBar), apiKeyLabel, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(apiKeyBar), apiKeyEntry, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(chatPanel), apiKeyBar, FALSE, FALSE, 0);
+#else
+    gtk_box_append(GTK_BOX(apiKeyBar), apiKeyLabel);
+    gtk_box_append(GTK_BOX(apiKeyBar), apiKeyEntry);
+    gtk_box_append(GTK_BOX(chatPanel), apiKeyBar);
+#endif
+
+    // Show the API key row only when Claude is selected
+    {
+        const std::string& currentModel = control->getSettings()->getChatModel();
+        gtk_widget_set_visible(apiKeyBar,
+                               currentModel == "claude" || currentModel.empty() ? TRUE : FALSE);
+    }
+
+    // Messages area: ChatView's scrolled window expands to fill remaining space
+    GtkWidget* messagesWidget = chatView->getWidget();
+    gtk_widget_set_vexpand(messagesWidget, TRUE);
+    gtk_widget_set_hexpand(messagesWidget, TRUE);
+#if GTK_MAJOR_VERSION == 3
+    gtk_box_pack_start(GTK_BOX(chatPanel), messagesWidget, TRUE, TRUE, 0);
+#else
+    gtk_box_append(GTK_BOX(chatPanel), messagesWidget);
+#endif
+
+    // Input bar: entry + Send + Stop
+    GtkWidget* inputBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_add_css_class(inputBar, "chat-input-bar");
+    gtk_widget_set_margin_start(inputBar, 8);
+    gtk_widget_set_margin_end(inputBar, 8);
+    gtk_widget_set_margin_top(inputBar, 6);
+    gtk_widget_set_margin_bottom(inputBar, 6);
+    chatInputWidget.reset(inputBar, xoj::util::adopt);
+
+    GtkWidget* entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Ask about this page…");
+    gtk_widget_set_hexpand(entry, TRUE);
+    chatEntryWidget.reset(entry, xoj::util::adopt);
+
+    GtkWidget* sendBtn = gtk_button_new_with_label("Send");
+    chatSendButton.reset(sendBtn, xoj::util::adopt);
+
+    GtkWidget* stopBtn = gtk_button_new_with_label("Stop");
+    gtk_widget_set_sensitive(stopBtn, FALSE);
+    chatStopButton.reset(stopBtn, xoj::util::adopt);
+
+#if GTK_MAJOR_VERSION == 3
+    gtk_box_pack_start(GTK_BOX(inputBar), entry, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(inputBar), sendBtn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(inputBar), stopBtn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(chatPanel), inputBar, FALSE, FALSE, 0);
+#else
+    gtk_box_append(GTK_BOX(inputBar), entry);
+    gtk_box_append(GTK_BOX(inputBar), sendBtn);
+    gtk_box_append(GTK_BOX(inputBar), stopBtn);
+    gtk_box_append(GTK_BOX(chatPanel), inputBar);
+#endif
+
+    // Wire up ChatController
+    chatController =
+            std::make_unique<ChatController>(control, this, chatView.get(), control->getSettings());
+    chatController->setCompletionCallback([this]() { updateChatButtonStates(false); });
+
+    // Send button clicked
+    g_signal_connect(sendBtn, "clicked",
+                     G_CALLBACK(+[](GtkButton*, gpointer data) {
+                         auto* mw = static_cast<MainWindow*>(data);
+                         const gchar* txt =
+                                 gtk_entry_get_text(GTK_ENTRY(mw->chatEntryWidget.get()));
+                         if (!txt || !txt[0]) {
+                             return;
+                         }
+                         std::string text = txt;
+                         gtk_entry_set_text(GTK_ENTRY(mw->chatEntryWidget.get()), "");
+                         mw->updateChatButtonStates(true);
+                         mw->chatController->sendUserMessage(text);
+                     }),
+                     this);
+
+    // Entry activate (Enter key)
+    g_signal_connect(entry, "activate",
+                     G_CALLBACK(+[](GtkEntry*, gpointer data) {
+                         auto* mw = static_cast<MainWindow*>(data);
+                         const gchar* txt =
+                                 gtk_entry_get_text(GTK_ENTRY(mw->chatEntryWidget.get()));
+                         if (!txt || !txt[0]) {
+                             return;
+                         }
+                         std::string text = txt;
+                         gtk_entry_set_text(GTK_ENTRY(mw->chatEntryWidget.get()), "");
+                         mw->updateChatButtonStates(true);
+                         mw->chatController->sendUserMessage(text);
+                     }),
+                     this);
+
+    // Stop button
+    g_signal_connect(stopBtn, "clicked",
+                     G_CALLBACK(+[](GtkButton*, gpointer data) {
+                         auto* mw = static_cast<MainWindow*>(data);
+                         if (mw->chatController) {
+                             mw->chatController->cancelCurrent();
+                         }
+                     }),
+                     this);
+
+    // Add chat panel to right pane of the splitter
+#if GTK_MAJOR_VERSION == 3
+    gtk_paned_pack2(GTK_PANED(hPane), chatPanel, FALSE, FALSE);
+#else
+    gtk_paned_set_end_child(GTK_PANED(hPane), chatPanel);
+    gtk_paned_set_resize_end_child(GTK_PANED(hPane), false);
+    gtk_paned_set_shrink_end_child(GTK_PANED(hPane), false);
+#endif
+
+    gtk_widget_show_all(chatPanel);
 }
 
 void MainWindow::setGtkTouchscreenScrollingForDeviceMapping() {
@@ -371,33 +590,11 @@ void MainWindow::setGtkTouchscreenScrollingEnabled(bool enabled) {
     gtk_scrolled_window_set_kinetic_scrolling(GTK_SCROLLED_WINDOW(winXournal), enabled);
 }
 
-void MainWindow::setChatVisible(bool visible) {
-    if (visible == this->chatVisible) {
-        return;
-    }
-    this->chatVisible = visible;
-    control->getSettings()->setChatVisible(visible);
-
-    if (!chatPanedWidget || !chatWidget || !chatPanel) {
-        return;
-    }
-
-    gtk_widget_set_visible(chatWidget.get(), visible);
-    if (visible) {
-        int contentWidth = gtk_widget_get_width(chatPanedWidget.get());
-        int chatWidth = std::clamp(control->getSettings()->getChatWidth(), 200, 480);
-        if (contentWidth > 0) {
-            gtk_paned_set_position(GTK_PANED(chatPanedWidget.get()), std::max(0, contentWidth - chatWidth));
-        }
-        chatPanel->focusInput();
-    } else {
-        gtk_paned_set_position(GTK_PANED(chatPanedWidget.get()), gtk_widget_get_width(chatPanedWidget.get()));
-    }
-}
-
-bool MainWindow::isChatVisible() const { return this->chatVisible; }
-
 auto MainWindow::getLayout() const -> Layout* { return this->xournal->getLayout(); }
+
+ChatController* MainWindow::getChatController() const {
+    return chatController.get();
+}
 
 auto MainWindow::getNegativeXournalWidgetPos() const -> xoj::util::Point<double> {
     return Util::toWidgetCoords(this->winXournal, xoj::util::Point{0.0, 0.0});
@@ -809,5 +1006,14 @@ void MainWindow::setDPI() const {
                                                               Util::DPI_NORMALIZATION_FACTOR);
     } else {
         this->getControl()->getZoomControl()->setZoom100Value(dpi / Util::DPI_NORMALIZATION_FACTOR);
+    }
+}
+
+void MainWindow::updateChatButtonStates(bool messageInFlight) {
+    if (chatSendButton) {
+        gtk_widget_set_sensitive(chatSendButton.get(), !messageInFlight);
+    }
+    if (chatStopButton) {
+        gtk_widget_set_sensitive(chatStopButton.get(), messageInFlight);
     }
 }

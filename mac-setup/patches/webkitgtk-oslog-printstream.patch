@@ -1,0 +1,64 @@
+diff --git a/Source/WTF/wtf/darwin/OSLogPrintStream.mm b/Source/WTF/wtf/darwin/OSLogPrintStream.mm
+new file mode 100644
+index 000000000000..e0d5b3f1a4c1
+--- /dev/null
++++ b/Source/WTF/wtf/darwin/OSLogPrintStream.mm
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (C) 2024
++ *
++ * This is a minimal fallback implementation for builds that lack the
++ * OSLogPrintStream.mm source file in the WebKitGTK tarball.
++ */
++
++#include "config.h"
++#include "OSLogPrintStream.h"
++
++#if OS(DARWIN)
++
++#include <os/log.h>
++#include <cstdio>
++#include <cstdarg>
++
++namespace WTF {
++
++OSLogPrintStream::OSLogPrintStream(os_log_t log, os_log_type_t logType)
++    : m_log(log)
++    , m_logType(logType)
++{
++}
++
++OSLogPrintStream::~OSLogPrintStream() = default;
++
++std::unique_ptr<OSLogPrintStream> OSLogPrintStream::open(const char* subsystem, const char* category, os_log_type_t logType)
++{
++    if (!subsystem || !category)
++        return nullptr;
++
++    os_log_t log = os_log_create(subsystem, category);
++    return std::unique_ptr<OSLogPrintStream>(new OSLogPrintStream(log, logType));
++}
++
++void OSLogPrintStream::vprintf(const char* format, va_list args)
++{
++    if (!format)
++        return;
++
++    char buffer[2048];
++    va_list argsCopy;
++    va_copy(argsCopy, args);
++    int length = vsnprintf(buffer, sizeof(buffer), format, argsCopy);
++    va_end(argsCopy);
++
++    if (length <= 0)
++        return;
++
++    if (m_log)
++        os_log_with_type(m_log, m_logType, "%{public}s", buffer);
++    else
++        fprintf(stderr, "%s", buffer);
++}
++
++} // namespace WTF
++
++#endif

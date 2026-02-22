@@ -225,7 +225,6 @@ window.darkMode .chat-panel {
 	padding: 8px 10px;
 	border-radius: 10px;
 	margin: 4px 0;
-	max-width: 92%;
 }
 
 .chat-user {
@@ -260,6 +259,22 @@ window.darkMode .chat-system {
 	color: #b00020;
 }
 
+.chat-latex-loading {
+	color: gray;
+	font-style: italic;
+}
+
+@keyframes chat-thinking-blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.35; }
+}
+
+.chat-thinking {
+	color: gray;
+	font-style: italic;
+	animation: chat-thinking-blink 0.8s ease-in-out infinite;
+}
+
 .chat-latex-code {
 	font-family: monospace;
 	background-color: rgba(0, 0, 0, 0.05);
@@ -291,4 +306,72 @@ label.setting-touch-indicator {
 }
 label.setting-touch-indicator.pressed {
     background: radial-gradient(circle at center, red 0%, red 20%, alpha(red, .1) 60%, alpha(red, 0.) 100%);
+}
+
+/* Chat Panel Styles */
+.chat-panel {
+    background-color: @theme_bg_color;
+    border-left: 1px solid alpha(@borders, 0.5);
+}
+
+.chat-header {
+    border-bottom: 1px solid alpha(@borders, 0.3);
+}
+
+.chat-title {
+    font-weight: 600;
+    font-size: 14pt;
+}
+
+.chat-copilot-auth {
+    font-size: 10pt;
+    padding: 4px 12px;
+}
+
+.chat-settings {
+    border-bottom: 1px solid alpha(@borders, 0.2);
+    padding-bottom: 8px;
+}
+
+.chat-settings label {
+    font-size: 10pt;
+    margin-right: 4px;
+}
+
+.chat-settings combobox {
+    font-size: 10pt;
+    margin-right: 8px;
+}
+
+.chat-settings spinbutton {
+    font-size: 10pt;
+    margin-right: 8px;
+}
+
+.chat-messages {
+    background-color: @theme_bg_color;
+}
+
+.chat-download-progress {
+    border-top: 1px solid alpha(@borders, 0.3);
+    padding-top: 4px;
+}
+
+.chat-download-label {
+    font-size: 10pt;
+    color: alpha(@theme_fg_color, 0.75);
+}
+
+.chat-input-bar {
+    border-top: 1px solid alpha(@borders, 0.3);
+}
+
+.chat-input-bar entry {
+    font-size: 11pt;
+    padding: 8px;
+}
+
+.chat-input-bar button {
+    font-size: 10pt;
+    padding: 6px 16px;
 }

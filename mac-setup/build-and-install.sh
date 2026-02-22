@@ -36,9 +36,14 @@ cd "$ROOT_DIR"
 build_dir="$ROOT_DIR"/build
 mkdir -p "$build_dir"
 
+# Chat: gRPC disabled for jhbuild/mac-setup (FetchContent upb link fails on macOS). Use socket bridge.
+# To use gRPC: brew install grpc protobuf, then remove -DENABLE_CHAT_GRPC=OFF below.
+# Use all CPU cores for parallel build
+NPROC=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
 pushd "$build_dir"
-$ENSURE_JHBUILD cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release
-$ENSURE_JHBUILD cmake --build .
+$ENSURE_JHBUILD cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DENABLE_CHAT_GRPC=OFF
+$ENSURE_JHBUILD cmake --build . -j"$NPROC"
 $ENSURE_JHBUILD cmake --install . --prefix "$prefix_parent"/inst
 popd
 

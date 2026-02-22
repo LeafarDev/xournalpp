@@ -82,6 +82,10 @@ void setupEnvironment() {
                     lang.replace(pos, 1, "_");  // e.g. "de_DE"
                 }
                 lang += ".UTF-8";  // e.g. "de_DE.UTF-8"
+                // en_BR (English-Brazil) is not a standard POSIX locale; use en_US to avoid collate_byname failure
+                if (lang == "en_BR.UTF-8") {
+                    lang = "en_US.UTF-8";
+                }
                 g_message("Setting LANG and LC_MESSAGES to %s", lang.c_str());
                 setenv("LANG", lang.c_str(), 0);
                 setenv("LC_MESSAGES", lang.c_str(), 0);

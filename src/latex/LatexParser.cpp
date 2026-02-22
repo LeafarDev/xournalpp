@@ -104,10 +104,27 @@ std::vector<Segment> LatexParser::parse(const std::string& input) {
             }
         }
 
+        // \begin{env}...\end{env} (itemize, enumerate, equation, etc.)
+        if (startsWithAt(input, i, "\\begin{")) {
+            size_t braceEnd = input.find('}', i + 7);
+            if (braceEnd != std::string::npos) {
+                std::string env = input.substr(i + 7, braceEnd - (i + 7));
+                std::string endTag = "\\end{" + env + "}";
+                size_t endPos = input.find(endTag, braceEnd + 1);
+                if (endPos != std::string::npos) {
+                    std::string content = input.substr(i, endPos - i + endTag.size());
+                    segments.push_back({Segment::Type::LATEX_BLOCK, content});
+                    i = endPos + endTag.size();
+                    continue;
+                }
+            }
+        }
+
         size_t next = input.size();
         size_t nextInline = input.find('$', i);
         size_t nextOpenParen = input.find("\\(", i);
         size_t nextOpenBracket = input.find("\\[", i);
+        size_t nextBegin = input.find("\\begin{", i);
         size_t nextFence = input.find("```latex", i);
         size_t nextFenceTex = input.find("```tex", i);
         size_t nextBlock = input.find("$$", i);
@@ -115,6 +132,7 @@ std::vector<Segment> LatexParser::parse(const std::string& input) {
         if (nextInline != std::string::npos) next = std::min(next, nextInline);
         if (nextOpenParen != std::string::npos) next = std::min(next, nextOpenParen);
         if (nextOpenBracket != std::string::npos) next = std::min(next, nextOpenBracket);
+        if (nextBegin != std::string::npos) next = std::min(next, nextBegin);
         if (nextFence != std::string::npos) next = std::min(next, nextFence);
         if (nextFenceTex != std::string::npos) next = std::min(next, nextFenceTex);
         if (nextBlock != std::string::npos) next = std::min(next, nextBlock);
