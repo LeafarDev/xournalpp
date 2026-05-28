@@ -316,6 +316,7 @@ struct XournalMainPrivate {
     std::unique_ptr<GladeSearchpath> gladePath;
     std::unique_ptr<Control> control;
     std::unique_ptr<MainWindow> win;
+    bool fileEverOpened = false;  ///< True once a document has been loaded (used to guard macOS spawn logic)
 };
 using XMPtr = XournalMainPrivate*;
 
@@ -444,10 +445,10 @@ void on_open_files(GApplication* application, gpointer f, gint numFiles, gchar* 
     const fs::path p = Util::fromGFile(files[0]);
 
 #ifdef __APPLE__
-    // macOS: Finder often forwards open events to an existing instance.
-    // To get one instance per file, spawn a new process once, and guard against recursion.
-    const char* spawnedGuard = g_getenv("XOURNALPP_SPAWNED_OPEN");
-    if ((!spawnedGuard || std::string(spawnedGuard) != "1") && fs::exists(p)) {
+    // macOS: Finder forwards open events to the already-running instance.
+    // Spawn a new process so each file gets its own window — but only when this
+    // instance already has a document open (fresh instances should load directly).
+    if (app_data->fileEverOpened && fs::exists(p)) {
         try {
             fs::path abs = fs::absolute(p);
             std::string pathArg = abs.string();
@@ -456,7 +457,7 @@ void on_open_files(GApplication* application, gpointer f, gint numFiles, gchar* 
                 pathArg.replace(pos, 1, "\\\"");
                 pos += 2;
             }
-            std::string cmd = "XOURNALPP_SPAWNED_OPEN=1 open -na \"Xournal++\" --args \"" + pathArg + "\" &";
+            std::string cmd = "open -na \"Xournal++\" --args \"" + pathArg + "\" &";
             std::system(cmd.c_str());
         } catch (const fs::filesystem_error&) {
         }
@@ -467,6 +468,7 @@ void on_open_files(GApplication* application, gpointer f, gint numFiles, gchar* 
     try {
         if (fs::exists(p)) {
             app_data->control->openFile(fs::absolute(p));
+            app_data->fileEverOpened = true;
         } else {
             const std::string msg = FS(_F("File {1} does not exist.") % p.u8string());
             XojMsgBox::showErrorToUser(GTK_WINDOW(app_data->win->getWindow()), msg);
@@ -577,6 +579,7 @@ void on_startup(GApplication* application, XMPtr app_data) {
             }
         }
     }
+    app_data->fileEverOpened = !p.empty();
     app_data->control->openFileWithoutSavingTheCurrentDocument(
             std::move(p), app_data->attachMode, app_data->openAtPageNumber - 1,
             [ctrl = app_data->control.get(), app = GTK_APPLICATION(application)](bool) {

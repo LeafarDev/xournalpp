@@ -63,9 +63,15 @@ void CopilotCliModel::sendMessage(const MessageList& history,
                  onError]() mutable {
       try {
         GError* err = nullptr;
+        // Use STDIN_PIPE so we can immediately close stdin (send EOF).
+        // This prevents the CLI from waiting for interactive confirmations,
+        // keeping it in default chat-only mode and avoiding premium agent quota.
+        // We do NOT pass --allow-all so agentic tool execution is not enabled.
         GSubprocess* proc = g_subprocess_new(
-                static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE),
-                &err, copilotPathStr.c_str(), "-p", prompt.c_str(), "-s", "--allow-all", nullptr);
+                static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDIN_PIPE |
+                                              G_SUBPROCESS_FLAGS_STDOUT_PIPE |
+                                              G_SUBPROCESS_FLAGS_STDERR_PIPE),
+                &err, copilotPathStr.c_str(), "-p", prompt.c_str(), "-s", nullptr);
         if (!proc) {
             std::string msg = err ? err->message : "Failed to start Copilot CLI.";
             if (err) {
@@ -76,6 +82,15 @@ void CopilotCliModel::sendMessage(const MessageList& history,
             return;
         }
         g_debug("[chat] Copilot: subprocess started, reading stdout...");
+
+        // Close stdin immediately — sends EOF to the CLI so it can't block
+        // waiting for tool-use confirmations. Responses come via stdout only.
+        {
+            GOutputStream* stdinPipe = g_subprocess_get_stdin_pipe(proc);
+            if (stdinPipe) {
+                g_output_stream_close(stdinPipe, nullptr, nullptr);
+            }
+        }
 
         GInputStream* outStream = g_subprocess_get_stdout_pipe(proc);
         GInputStream* errStream = g_subprocess_get_stderr_pipe(proc);

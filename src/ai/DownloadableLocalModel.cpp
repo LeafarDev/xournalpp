@@ -50,6 +50,104 @@ static const LocalModelSpec kBuiltinSpecs[] = {
                 "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
                 807'403'520ULL,  // ~770 MB
         },
+        {
+                "llama-3.2-1b-base",
+                "Llama 3.2 1B",
+                "Llama-3.2-1B-Q4_K_M.gguf",
+                "https://huggingface.co/bartowski/Llama-3.2-1B-GGUF/resolve/main/"
+                "Llama-3.2-1B-Q4_K_M.gguf",
+                807'000'000ULL,  // ~770 MB
+        },
+        {
+                "smollm2-135m-instruct",
+                "SmolLM2 135M Instruct",
+                "SmolLM2-135M-Instruct-Q8_0.gguf",
+                "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/"
+                "SmolLM2-135M-Instruct-Q8_0.gguf",
+                152'000'000ULL,  // ~145 MB
+        },
+        {
+                "smollm2-135m",
+                "SmolLM2 135M",
+                "SmolLM2-135M-Q8_0.gguf",
+                "https://huggingface.co/bartowski/SmolLM2-135M-GGUF/resolve/main/"
+                "SmolLM2-135M-Q8_0.gguf",
+                152'000'000ULL,  // ~145 MB
+        },
+        {
+                "qwen2.5-0.5b-instruct",
+                "Qwen2.5 0.5B Instruct",
+                "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+                "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/"
+                "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+                357'000'000ULL,  // ~340 MB
+        },
+        {
+                "qwen2.5-0.5b",
+                "Qwen2.5 0.5B",
+                "Qwen2.5-0.5B-Q4_K_M.gguf",
+                "https://huggingface.co/bartowski/Qwen2.5-0.5B-GGUF/resolve/main/"
+                "Qwen2.5-0.5B-Q4_K_M.gguf",
+                357'000'000ULL,  // ~340 MB
+        },
+        {
+                "qwen3-0.6b",
+                "Qwen3 0.6B",
+                "Qwen3-0.6B-Q4_K_M.gguf",
+                "https://huggingface.co/bartowski/Qwen3-0.6B-GGUF/resolve/main/"
+                "Qwen3-0.6B-Q4_K_M.gguf",
+                524'000'000ULL,  // ~500 MB
+        },
+        {
+                "qwen2.5-coder-0.5b-instruct",
+                "Qwen2.5-Coder 0.5B Instruct",
+                "Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf",
+                "https://huggingface.co/bartowski/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/"
+                "Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf",
+                378'000'000ULL,  // ~360 MB
+        },
+        {
+                "tinyllama-1.1b-chat",
+                "TinyLlama 1.1B Chat",
+                "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+                "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/"
+                "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+                669'000'000ULL,  // ~638 MB
+        },
+        {
+                // LFM2.5-1.2B-Instruct covers all three MLX quantisation variants
+                // (4-bit, 6-bit, 8-bit) listed in LM Studio; this is the GGUF Q4_K_M edition.
+                "lfm2.5-1.2b-instruct",
+                "LFM2.5 1.2B Instruct",
+                "LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+                "https://huggingface.co/bartowski/LFM2.5-1.2B-Instruct-GGUF/resolve/main/"
+                "LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+                734'000'000ULL,  // ~700 MB
+        },
+        {
+                "lfm2-1.2b",
+                "LFM2 1.2B",
+                "LFM2-1.2B-Q4_K_M.gguf",
+                "https://huggingface.co/bartowski/LFM2-1.2B-GGUF/resolve/main/"
+                "LFM2-1.2B-Q4_K_M.gguf",
+                734'000'000ULL,  // ~700 MB
+        },
+        {
+                "pythia-70m",
+                "Pythia 70M",
+                "pythia-70m-deduped.q8_0.gguf",
+                "https://huggingface.co/afrideva/pythia-70m-deduped-GGUF/resolve/main/"
+                "pythia-70m-deduped.q8_0.gguf",
+                78'643'200ULL,  // ~75 MB
+        },
+        {
+                "bloomz-560m",
+                "BLOOMZ 560M",
+                "bloomz-560m.Q4_K_M.gguf",
+                "https://huggingface.co/mradermacher/bloomz-560m-GGUF/resolve/main/"
+                "bloomz-560m.Q4_K_M.gguf",
+                346'000'000ULL,  // ~330 MB
+        },
 };
 
 // ---------------------------------------------------------------------------
@@ -257,6 +355,10 @@ void DownloadableLocalModel::sendMessage(const MessageList& history,
                         ". The GGUF file may be incomplete or incompatible with this build of "
                         "llama.cpp.");
                 return;
+            }
+            // Sync actual context window so ChatController can cap document context correctly.
+            if (int ctxSize = engine.getContextSize(); ctxSize > 0) {
+                p.maxContextTokens = static_cast<std::size_t>(ctxSize);
             }
             if (progressCallback) {
                 progressCallback(1.0, "Model ready");

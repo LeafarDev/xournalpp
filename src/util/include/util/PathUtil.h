@@ -174,6 +174,9 @@ auto system_single_byte_filename(const fs::path& path) -> std::string;
 [[maybe_unused]] [[nodiscard]] fs::path getDefaultLatexTemplatePath();
 fs::path getBuiltInPaletteDirectoryPath();
 fs::path getCustomPaletteDirectoryPath();
+/// Path to an AI resource file under resources/ai/ (e.g. "latex-skill.md").
+/// Returns an empty path if the file is not found in the data directory.
+[[maybe_unused]] [[nodiscard]] fs::path getAiResourcePath(const std::string& filename);
 
 /**
  * List all files in a directory sorted alphabetically

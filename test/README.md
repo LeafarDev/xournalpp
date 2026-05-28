@@ -1,5 +1,47 @@
 # GTEST testing framework
 
+## How to build and run tests
+
+1. **Enable GTEST** at configure time:
+   ```bash
+   cmake -B build -DENABLE_GTEST=ON -DDOWNLOAD_GTEST=ON
+   ```
+   (Or add `-DENABLE_GTEST=ON` to your usual cmake line; use `-DDOWNLOAD_GTEST=ON` if you don't have GTest installed.)
+
+2. **Build the test executable**:
+   ```bash
+   ninja -C build test-units
+   ```
+
+3. **Run all unit tests**:
+   ```bash
+   ./build/test/test-units
+   ```
+   Or run only chat-related tests:
+   ```bash
+   ./build/test/test-units --gtest_filter="ContextBuilder*:ChatController*:ModelRouter*"
+   ```
+
+4. **Via CTest** (after building):
+   ```bash
+   cd build && ctest -R test-units -V
+   ```
+
+### Front-end style tests (chat)
+
+- **GTK (all platforms):** Simular digitar no campo e enviar (Enter ou botão Send), e verificar que o callback recebe o texto (teste ChatPanelSendTest). Rodam com os testes de integração GTK:
+  ```bash
+  ninja -C build test-gtk-integration
+  ./build/test/test-gtk-integration --gtest_filter="*ChatPanelSendTest*"
+  ```
+
+- **Chat view DOM/scroll (só macOS):** Carregam o HTML do chat num WKWebView, chamam a API JS (addUserMessage, appendToken, showSystemNotice, clearConversation) e verificam DOM e scroll. Requer `-DENABLE_GTEST=ON` e `ninja test-chat-view`:
+  ```bash
+  ninja -C build test-chat-view
+  ./build/test/test-chat-view
+  ```
+  Testes: mensagem do usuário aparece no DOM; resposta do assistente (tokens); aviso de sistema; scroll vai para o fundo com várias mensagens; clearConversation remove todas.
+
 ## How to add a new test
 
 Add a new `.cpp` file somewhere within `test/unit_tests`.

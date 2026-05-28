@@ -639,6 +639,21 @@ auto Util::getBuiltInPaletteDirectoryPath() -> fs::path { return getDataPath() /
 
 auto Util::getCustomPaletteDirectoryPath() -> fs::path { return getConfigSubfolder("palettes"); }
 
+auto Util::getAiResourcePath(const std::string& filename) -> fs::path {
+    // On Linux: PACKAGE_DATA_DIR/xournalpp/resources/ai/<filename>
+    // On macOS (bundle): Contents/Resources/resources/ai/<filename>
+    fs::path p = getDataPath() / "resources" / "ai" / filename;
+    if (fs::exists(p)) {
+        return p;
+    }
+    // Fallback for dev builds where the source tree is the data dir.
+    fs::path alt = getDataPath() / "ai" / filename;
+    if (fs::exists(alt)) {
+        return alt;
+    }
+    return {};
+}
+
 auto Util::listFilesSorted(fs::path directory) -> std::vector<fs::path> {
     std::vector<fs::path> filePaths{};
     if (!exists(directory)) {

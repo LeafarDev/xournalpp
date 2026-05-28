@@ -2144,6 +2144,9 @@ void Control::resetSavedStatus() {
 
 void Control::quit(bool allowCancel) {
     g_message("Quitting");
+#ifdef __APPLE__
+    xoj::cancelDockIconUpdate();
+#endif
     auto afterClosed = [this, allowCancel](bool closed) {
         if (!closed) {
             g_message("Closing document failed or cancelled");

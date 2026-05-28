@@ -33,6 +33,13 @@ void setDockBadgeLabel(const std::string& labelUtf8);
  */
 void clearDockBadgeLabel();
 
+/**
+ * macOS only: cancel any pending background dock-icon generation so the
+ * process can exit cleanly. Call this early in the quit path.
+ * No-op on other platforms.
+ */
+void cancelDockIconUpdate();
+
 }  // namespace xoj
 
 #ifndef __APPLE__
@@ -40,4 +47,5 @@ inline void xoj::setDockIconFromPdfPath(const std::string&) {}
 inline void xoj::clearDockIcon() {}
 inline void xoj::setDockBadgeLabel(const std::string&) {}
 inline void xoj::clearDockBadgeLabel() {}
+inline void xoj::cancelDockIconUpdate() {}
 #endif

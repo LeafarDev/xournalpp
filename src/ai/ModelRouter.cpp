@@ -59,9 +59,67 @@ std::unique_ptr<IChatModel> ModelRouter::createModel(ModelType type) const {
     }
     case ModelType::Llama32_1B: {
         const LocalModelSpec* spec = DownloadableLocalModel::specForId("llama-3.2-1b");
-        if (!spec) {
-            return nullptr;
-        }
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::Llama32_1B_Base: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("llama-3.2-1b-base");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::SmolLM2_135M_Instruct: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("smollm2-135m-instruct");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::SmolLM2_135M: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("smollm2-135m");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::Qwen25_0_5B_Instruct: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("qwen2.5-0.5b-instruct");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::Qwen25_0_5B: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("qwen2.5-0.5b");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::Qwen3_0_6B: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("qwen3-0.6b");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::Qwen25Coder_0_5B: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("qwen2.5-coder-0.5b-instruct");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::TinyLlama_1_1B_Chat: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("tinyllama-1.1b-chat");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::LFM25_1_2B_Instruct: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("lfm2.5-1.2b-instruct");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::LFM2_1_2B: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("lfm2-1.2b");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::Pythia_70M: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("pythia-70m");
+        if (!spec) { return nullptr; }
+        return std::make_unique<DownloadableLocalModel>(*spec);
+    }
+    case ModelType::Bloomz_560M: {
+        const LocalModelSpec* spec = DownloadableLocalModel::specForId("bloomz-560m");
+        if (!spec) { return nullptr; }
         return std::make_unique<DownloadableLocalModel>(*spec);
     }
     }

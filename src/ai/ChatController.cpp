@@ -8,6 +8,10 @@
 
 #include "ai/ChatController.h"
 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <utility>
 
 #include <glib.h>
@@ -18,6 +22,7 @@
 #include "core/control/settings/Settings.h"
 #include "core/gui/MainWindow.h"
 #include "model/Document.h"
+#include "util/PathUtil.h"
 #include "util/Util.h"
 #include "util/i18n.h"
 
@@ -68,47 +73,7 @@ void ChatController::sendUserMessageImpl(const std::string& text) {
     view->addUserMessage(text);
     context.addUserMessage(text);
 
-    Document* doc = control->getDocument();
-    DocumentContextProvider provider(doc, window);
-
-    // Map user preference string to DocContextMode.
-    std::string ctxId = settings->getChatContext();
-    DocContextMode mode = DocContextMode::CurrentPage;
-    if (ctxId == "selection") {
-        mode = DocContextMode::Selection;
-    } else if (ctxId == "document") {
-        mode = DocContextMode::FullDocument;
-    } else if (ctxId == "none") {
-        mode = DocContextMode::None;
-    }
-
-    int maxCtxChars = settings->getChatContextSize();
-    if (maxCtxChars <= 0) {
-        maxCtxChars = 12000;
-    }
-    std::string docContext = provider.buildContext(mode, maxCtxChars);
-
-    // Build system prompt (can be localized later).
-    std::string systemPrompt =
-            "You are an AI assistant helping with math notes in Xournal++.\n"
-            "Use LaTeX delimiters so your output renders correctly:\n"
-            "- Inline math/formatting: $...$ (e.g. $\\textbf{bold}$, $x^2$, $\\LaTeX$)\n"
-            "- Display math: $$...$$\n"
-            "- Lists: \\begin{itemize}...\\end{itemize} or \\begin{enumerate}...\\end{enumerate}\n"
-            "- Line break: \\\\ or \\newline\n"
-            "- New paragraph: blank line or \\par\n"
-            "IMPORTANT: Wrap bold, italic, math and formatted text in $...$ so it renders. "
-            "Use \\begin{...}...\\end{...} for lists.\n";
-    if (!docContext.empty()) {
-        systemPrompt += "\n[Document Context]\n";
-        systemPrompt += docContext;
-        systemPrompt += "\n";
-    }
-    context.setSystemPrompt(std::move(systemPrompt));
-
-    // Decide backend from settings->getChatModel():
-    //  - "copilot" -> Copilot
-    //  - anything else -> local (via GGUF path lookup)
+    // --- Create model first so we know its context window size ---
     std::unique_ptr<IChatModel> newModel;
     std::string modelType = settings->getChatModel();
     try {
@@ -122,6 +87,30 @@ void ChatController::sendUserMessageImpl(const std::string& text) {
             newModel = router.createModel(ModelType::WizardMath7B);
         } else if (modelType == "llama-3.2-1b") {
             newModel = router.createModel(ModelType::Llama32_1B);
+        } else if (modelType == "llama-3.2-1b-base") {
+            newModel = router.createModel(ModelType::Llama32_1B_Base);
+        } else if (modelType == "smollm2-135m-instruct") {
+            newModel = router.createModel(ModelType::SmolLM2_135M_Instruct);
+        } else if (modelType == "smollm2-135m") {
+            newModel = router.createModel(ModelType::SmolLM2_135M);
+        } else if (modelType == "qwen2.5-0.5b-instruct") {
+            newModel = router.createModel(ModelType::Qwen25_0_5B_Instruct);
+        } else if (modelType == "qwen2.5-0.5b") {
+            newModel = router.createModel(ModelType::Qwen25_0_5B);
+        } else if (modelType == "qwen3-0.6b") {
+            newModel = router.createModel(ModelType::Qwen3_0_6B);
+        } else if (modelType == "qwen2.5-coder-0.5b-instruct") {
+            newModel = router.createModel(ModelType::Qwen25Coder_0_5B);
+        } else if (modelType == "tinyllama-1.1b-chat") {
+            newModel = router.createModel(ModelType::TinyLlama_1_1B_Chat);
+        } else if (modelType == "lfm2.5-1.2b-instruct") {
+            newModel = router.createModel(ModelType::LFM25_1_2B_Instruct);
+        } else if (modelType == "lfm2-1.2b") {
+            newModel = router.createModel(ModelType::LFM2_1_2B);
+        } else if (modelType == "pythia-70m") {
+            newModel = router.createModel(ModelType::Pythia_70M);
+        } else if (modelType == "bloomz-560m") {
+            newModel = router.createModel(ModelType::Bloomz_560M);
         } else {
             newModel = router.createModel(ModelType::Local);
         }
@@ -149,7 +138,13 @@ void ChatController::sendUserMessageImpl(const std::string& text) {
         } else if (modelType == "claude") {
             errorMsg += "Enter your Anthropic API key in the 'API Key' field above the chat input.";
         } else if (modelType == "mpt-7b" || modelType == "wizardmath-7b" ||
-                   modelType == "llama-3.2-1b") {
+                   modelType == "llama-3.2-1b" || modelType == "llama-3.2-1b-base" ||
+                   modelType == "smollm2-135m-instruct" || modelType == "smollm2-135m" ||
+                   modelType == "qwen2.5-0.5b-instruct" || modelType == "qwen2.5-0.5b" ||
+                   modelType == "qwen3-0.6b" || modelType == "qwen2.5-coder-0.5b-instruct" ||
+                   modelType == "tinyllama-1.1b-chat" || modelType == "lfm2.5-1.2b-instruct" ||
+                   modelType == "lfm2-1.2b" || modelType == "pythia-70m" ||
+                   modelType == "bloomz-560m") {
             errorMsg += "O modelo será baixado automaticamente ao enviar a primeira mensagem.";
         } else {
             errorMsg += "Configure XOURNALPP_LLM_MODEL com o caminho do modelo GGUF.";
@@ -163,6 +158,92 @@ void ChatController::sendUserMessageImpl(const std::string& text) {
     }
 
     model = std::move(newModel);
+
+    // --- Build document context, capped to fit the model's context window ---
+    // Reserve ~1500 tokens for system prompt header + latex-skill + user message + response buffer.
+    // Use 3 chars/token as a conservative estimate for mixed LaTeX/text content.
+    // Cloud models (maxContextTokens > 8000) effectively have no practical cap here.
+    Document* doc = control->getDocument();
+    DocumentContextProvider provider(doc, window);
+
+    std::string ctxId = settings->getChatContext();
+    DocContextMode mode = DocContextMode::CurrentPage;
+    if (ctxId == "selection") {
+        mode = DocContextMode::Selection;
+    } else if (ctxId == "document") {
+        mode = DocContextMode::FullDocument;
+    } else if (ctxId == "none") {
+        mode = DocContextMode::None;
+    }
+
+    int maxCtxChars = settings->getChatContextSize();
+    if (maxCtxChars <= 0) {
+        maxCtxChars = 12000;
+    }
+    {
+        constexpr int kReservedTokens = 1500;
+        constexpr int kCharsPerToken = 3;
+        int modelCtx = static_cast<int>(model->params().maxContextTokens);
+        int cap = std::max(0, modelCtx - kReservedTokens) * kCharsPerToken;
+        if (cap > 0 && maxCtxChars > cap) {
+            g_debug("[chat] capping document context from %d to %d chars (model ctx=%d tokens)",
+                    maxCtxChars, cap, modelCtx);
+            maxCtxChars = cap;
+        }
+    }
+    std::string docContext = provider.buildContext(mode, maxCtxChars);
+
+    // Build system prompt.
+    std::string systemPrompt =
+            "You are an AI assistant helping with math notes in Xournal++.\n"
+            "CRITICAL: Your ENTIRE response must be written in LaTeX. Do NOT use Markdown, plain "
+            "text tables, asterisks for bold/italic, or any non-LaTeX formatting.\n"
+            "ALL text, lists, matrices, emphasis, and structure must use LaTeX syntax.\n"
+            "LaTeX formatting rules:\n"
+            "- Inline math: $...$ (e.g. $x^2$, $\\vec{v}$, $A_{ij}$)\n"
+            "- Display math: $$...$$\n"
+            "- Bold text: $\\textbf{word}$\n"
+            "- Italic text: $\\textit{word}$\n"
+            "- Matrices: $$\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}$$\n"
+            "- Lists: \\begin{itemize}\\item ...\\end{itemize} or "
+            "\\begin{enumerate}\\item ...\\end{enumerate}\n"
+            "- Line break: \\\\\n"
+            "- New paragraph: \\par or blank line\n"
+            "NEVER output: | table | syntax |, **bold**, *italic*, or bare Markdown.\n"
+            "ALWAYS use LaTeX equivalents for every formatting need.\n";
+
+    // Append the LaTeX skill sheet only if there is room (local models have tight context limits).
+    constexpr int kSkillSheetMaxChars = 6000;
+    {
+        int usedChars = static_cast<int>(systemPrompt.size()) + static_cast<int>(docContext.size());
+        int remainingForSkill = model->params().maxContextTokens * 3 - usedChars;
+        if (remainingForSkill > kSkillSheetMaxChars / 2) {
+            fs::path skillPath = Util::getAiResourcePath("latex-skill.md");
+            if (!skillPath.empty()) {
+                std::ifstream f(skillPath);
+                if (f.is_open()) {
+                    std::ostringstream ss;
+                    ss << f.rdbuf();
+                    std::string skill = ss.str();
+                    if (static_cast<int>(skill.size()) > kSkillSheetMaxChars) {
+                        skill.resize(static_cast<size_t>(kSkillSheetMaxChars));
+                    }
+                    systemPrompt += "\n\n";
+                    systemPrompt += skill;
+                    g_debug("[chat] latex-skill.md appended (%zu bytes)", skill.size());
+                }
+            }
+        } else {
+            g_debug("[chat] skipping latex-skill.md (not enough context budget)");
+        }
+    }
+
+    if (!docContext.empty()) {
+        systemPrompt += "\n[Document Context]\n";
+        systemPrompt += docContext;
+        systemPrompt += "\n";
+    }
+    context.setSystemPrompt(std::move(systemPrompt));
 
     // Wire progress callback for downloadable models.
     if (auto* dlModel = dynamic_cast<DownloadableLocalModel*>(model.get())) {
@@ -246,8 +327,38 @@ void ChatController::sendUserMessageImpl(const std::string& text) {
         });
     };
 
+    // Shared accumulator so both onToken and onComplete can access the full raw text.
+    auto rawBuf = std::make_shared<std::string>();
+    auto modelId = modelType;
+
+    auto origOnToken = std::move(onToken);
+    auto wrappedOnToken = [rawBuf, origOnToken](const std::string& token) mutable {
+        *rawBuf += token;
+        origOnToken(token);
+    };
+
+    auto origOnComplete = std::move(onComplete);
+    auto wrappedOnComplete = [rawBuf, modelId, origOnComplete]() mutable {
+        // Save raw response to debug file.
+        try {
+            namespace fs = std::filesystem;
+            fs::path debugDir = fs::path(g_get_user_data_dir()) / "xournalpp";
+            fs::create_directories(debugDir);
+            // Use a timestamp so multiple responses are preserved.
+            auto now = std::chrono::system_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+            std::string fname = "raw_response_" + std::to_string(ms) + "_" + modelId + ".txt";
+            std::ofstream f(debugDir / fname);
+            if (f.is_open()) {
+                f << *rawBuf;
+                g_debug("[chat] raw response saved to %s", (debugDir / fname).c_str());
+            }
+        } catch (...) {}
+        origOnComplete();
+    };
+
     g_debug("[chat] calling model->sendMessage");
-    model->sendMessage(history, std::move(onToken), std::move(onComplete), std::move(onError));
+    model->sendMessage(history, std::move(wrappedOnToken), std::move(wrappedOnComplete), std::move(onError));
 }
 
 void ChatController::clearConversation() {

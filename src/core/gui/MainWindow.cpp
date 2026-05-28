@@ -369,9 +369,34 @@ void MainWindow::initXournalWidget() {
     GtkWidget* modelCombo = gtk_combo_box_text_new();
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "claude", "Claude");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "copilot", "Copilot");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "pythia-70m",
+                              "Pythia 70M (local, ~75 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "smollm2-135m-instruct",
+                              "SmolLM2 135M Instruct (local, ~145 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "smollm2-135m",
+                              "SmolLM2 135M (local, ~145 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "bloomz-560m",
+                              "BLOOMZ 560M (local, ~330 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "qwen2.5-0.5b-instruct",
+                              "Qwen2.5 0.5B Instruct (local, ~340 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "qwen2.5-0.5b",
+                              "Qwen2.5 0.5B (local, ~340 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "qwen2.5-coder-0.5b-instruct",
+                              "Qwen2.5-Coder 0.5B Instruct (local, ~360 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "qwen3-0.6b",
+                              "Qwen3 0.6B (local, ~500 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "tinyllama-1.1b-chat",
+                              "TinyLlama 1.1B Chat (local, ~638 MB)");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "llama-3.2-1b",
                               "Llama 3.2 1B Instruct (local, ~770 MB)");
-    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "mpt-7b", "MPT-7B (local, ~4.3 GB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "llama-3.2-1b-base",
+                              "Llama 3.2 1B (local, ~770 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "lfm2.5-1.2b-instruct",
+                              "LFM2.5 1.2B Instruct (local, ~700 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "lfm2-1.2b",
+                              "LFM2 1.2B (local, ~700 MB)");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "mpt-7b",
+                              "MPT-7B (local, ~4.3 GB)");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "wizardmath-7b",
                               "WizardMath-7B (math, ~4.1 GB)");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(modelCombo), "local", "Local LLaMA (custom)");

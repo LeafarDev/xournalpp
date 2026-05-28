@@ -11,12 +11,16 @@
 #import <AppKit/AppKit.h>
 #import <PDFKit/PDFKit.h>
 
+#include <atomic>
 #include <dispatch/dispatch.h>
 #include <string>
 
 namespace xoj {
 
 static const CGFloat kDockIconSize = 512.0;
+static std::atomic<bool> g_iconUpdateCancelled{false};
+
+void cancelDockIconUpdate() { g_iconUpdateCancelled.store(true); }
 
 void clearDockIcon() {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -62,9 +66,18 @@ void setDockIconFromPdfPath(const std::string& pdfPathUtf8) {
         return;
     }
 
+    g_iconUpdateCancelled.store(false);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        if (g_iconUpdateCancelled.load()) {
+            return;
+        }
+
         PDFDocument* doc = [[PDFDocument alloc] initWithURL:url];
         if (!doc || [doc pageCount] == 0) {
+            return;
+        }
+
+        if (g_iconUpdateCancelled.load()) {
             return;
         }
 
@@ -75,12 +88,14 @@ void setDockIconFromPdfPath(const std::string& pdfPathUtf8) {
 
         CGSize size = CGSizeMake(kDockIconSize, kDockIconSize);
         NSImage* thumbnail = [page thumbnailOfSize:size forBox:kPDFDisplayBoxMediaBox];
-        if (!thumbnail) {
+        if (!thumbnail || g_iconUpdateCancelled.load()) {
             return;
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            [NSApp setApplicationIconImage:thumbnail];
+            if (!g_iconUpdateCancelled.load()) {
+                [NSApp setApplicationIconImage:thumbnail];
+            }
         });
     });
 }
